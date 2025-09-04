@@ -242,25 +242,6 @@ curl -X POST "http://localhost:8000/print"   -H "Content-Type: application/json"
 
 ---
 
-## 🛠️ GitHub Actions Deployment
-The CI/CD workflow automatically publishes Docker images to GitHub Container Registry.
-
-### Setup
-1. Fork the repository  
-2. Go to **Settings → Packages & registries → Package settings**  
-3. Set package visibility to **Public**  
-4. Create a `releases` branch  
-5. Push code with version tags (e.g., `v1.0.0`)  
-
-Deploy:
-```bash
-git checkout releases
-git tag v1.0.0
-git push origin releases --tags
-```
-
----
-
 ## 📄 License
 **MIT License** – See [LICENSE](./LICENSE) for details.  
 If you use this code, please provide attribution to the original repository.
