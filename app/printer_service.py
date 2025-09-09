@@ -225,6 +225,10 @@ class ThermalPrinterService:
                 elif cmd == "set_width":
                     width = value if isinstance(value, int) else 1
                     self.printer.set_width(width)
+                elif cmd == "set_double_height":
+                    self.printer.set("double_height=True")
+                elif cmd == "set_double_width":
+                    self.printer.set("double_width=True")
                 elif cmd == "set_justification":
                     self.printer.set_justification(str(value))
                 elif cmd == "set_line_spacing":
