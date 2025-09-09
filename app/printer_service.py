@@ -2,6 +2,8 @@ import logging
 from escpos.printer import Network
 from typing import List, Dict, Any
 import requests
+from io import BytesIO
+from PIL import Image
 import os
 import tempfile
 
@@ -33,26 +35,19 @@ class ThermalPrinterService:
         """Déconnecte l'imprimante"""
         if self.printer:
             try:
-                # Envoyer un flush avant de fermer
-                self.printer._raw(b'\x0c')  # Form feed
                 self.printer.close()
             except Exception as e:
                 logger.error(f"Erreur lors de la déconnexion: {str(e)}")
             finally:
                 self.printer = None
     
-    def download_image(self, url: str) -> str:
-        """Télécharge une image depuis une URL et la sauve temporairement"""
+    def download_image_pil(self, url: str) -> Image.Image:
+        """Télécharge une image depuis une URL et la retourne comme PIL Image"""
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
-            
-            # Créer un fichier temporaire
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-            temp_file.write(response.content)
-            temp_file.close()
-            
-            return temp_file.name
+            image = Image.open(BytesIO(response.content))
+            return image
         except Exception as e:
             logger.error(f"Erreur de téléchargement de l'image {url}: {str(e)}")
             raise
@@ -130,17 +125,24 @@ class ThermalPrinterService:
                     else:
                         self.printer.barcode(str(value), 'CODE128')
                 elif cmd == "image":
+                    pil_image = None
                     temp_file = None
                     try:
                         if isinstance(value, str):
                             if value.startswith('http://') or value.startswith('https://'):
-                                # Télécharger l'image depuis l'URL
-                                temp_file = self.download_image(value)
-                                image_path = temp_file
+                                # Télécharger l'image depuis l'URL avec PIL
+                                pil_image = self.download_image_pil(value)
                             elif ', ' in value:
                                 # Parser les paramètres image
                                 img_params = self.parse_complex_params(value)
-                                image_path = img_params.get('content', str(value))
+                                image_source = img_params.get('content', str(value))
+                                
+                                # Vérifier si c'est une URL
+                                if image_source.startswith('http://') or image_source.startswith('https://'):
+                                    pil_image = self.download_image_pil(image_source)
+                                else:
+                                    # Charger depuis fichier local
+                                    pil_image = Image.open(image_source)
                                 
                                 # Extraire les paramètres spécifiques à l'image
                                 high_density_vertical = img_params.get('high_density_vertical', True)
@@ -149,8 +151,9 @@ class ThermalPrinterService:
                                 fragment_height = img_params.get('fragment_height', 960)
                                 center = img_params.get('center', False)
                                 
+                                # Imprimer avec PIL Image directement
                                 self.printer.image(
-                                    image_path,
+                                    pil_image,
                                     high_density_vertical=high_density_vertical,
                                     high_density_horizontal=high_density_horizontal,
                                     impl=impl,
@@ -159,13 +162,21 @@ class ThermalPrinterService:
                                 )
                                 return  # Image already printed, exit early
                             else:
-                                image_path = str(value)
+                                # Vérifier si c'est une URL
+                                if value.startswith('http://') or value.startswith('https://'):
+                                    pil_image = self.download_image_pil(value)
+                                else:
+                                    # Charger depuis fichier local
+                                    pil_image = Image.open(value)
                             
                             # Image sans paramètres spécifiques
-                            print("Printing image:", image_path)
-                            self.printer.image(image_path)
+                            if pil_image:
+                                self.printer.image(pil_image)
+                            else:
+                                self.printer.image(value)  # Chemin du fichier
                         else:
-                            self.printer.image(str(value))
+                            # Si c'est déjà un objet PIL Image ou chemin
+                            self.printer.image(value)
                     finally:
                         # Nettoyer le fichier temporaire si nécessaire
                         if temp_file and os.path.exists(temp_file):
@@ -175,12 +186,9 @@ class ThermalPrinterService:
                                 pass
                 elif cmd == "cut":
                     mode = value if isinstance(value, str) else "PART"
-                    # Ajouter quelques lignes avant le cut pour s'assurer que l'image est imprimée
-                    print("Cutting paper with mode:", mode)
+                    # Ajouter quelques lignes avant le cut
                     self.printer._raw(b'\n\n')
                     self.printer.cut(mode)
-                    # Forcer l'impression immédiate
-                    self.printer._raw(b'\x0c')  # Form feed
                 elif cmd == "cashdraw":
                     pin = value if isinstance(value, int) else 2
                     self.printer.cashdraw(pin)
@@ -259,7 +267,11 @@ class ThermalPrinterService:
             
             # Configuration de l'encodage
             self.printer._raw(bytes(f'\x1b\x74\x10', 'utf-8'))  # UTF-8
-            self.printer._raw(b'\x1b\x40')  # Initialize printer
+            self.printer._raw(b'\x1b@')  # Initialize printer
+            
+            # Attendre que l'imprimante soit prête
+            import time
+            time.sleep(0.1)
             
             # Exécution des commandes
             for command in commands:
@@ -267,7 +279,6 @@ class ThermalPrinterService:
             
             # Forcer l'impression finale
             self.printer._raw(b'\n\n')
-            self.printer._raw(b'\x0c')  # Form feed final
             
             return True
             
@@ -275,8 +286,10 @@ class ThermalPrinterService:
             logger.error(f"Erreur d'impression: {str(e)}")
             raise
         finally:
-            # Toujours déconnecter
+            # Toujours déconnecter avec un petit délai
             try:
+                import time
+                time.sleep(0.1)
                 self.disconnect_printer()
             except:
                 pass
