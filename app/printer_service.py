@@ -2,8 +2,6 @@ import logging
 from escpos.printer import Network
 from typing import List, Dict, Any
 import requests
-from io import BytesIO
-from PIL import Image
 import os
 import tempfile
 
@@ -17,20 +15,31 @@ class ThermalPrinterService:
     def connect_printer(self, ip: str, port: int = 9100) -> bool:
         """Établit la connexion avec l'imprimante thermique"""
         try:
+            # Toujours fermer une connexion existante
+            if self.printer:
+                try:
+                    self.printer.close()
+                except:
+                    pass
+            
             self.printer = Network(ip, port, timeout=30, profile=self.profile)
             return True
         except Exception as e:
             logger.error(f"Erreur de connexion à l'imprimante {ip}:{port} - {str(e)}")
+            self.printer = None
             return False
     
     def disconnect_printer(self):
         """Déconnecte l'imprimante"""
         if self.printer:
             try:
+                # Envoyer un flush avant de fermer
+                self.printer._raw(b'\x0c')  # Form feed
                 self.printer.close()
-            except:
-                pass
-            self.printer = None
+            except Exception as e:
+                logger.error(f"Erreur lors de la déconnexion: {str(e)}")
+            finally:
+                self.printer = None
     
     def download_image(self, url: str) -> str:
         """Télécharge une image depuis une URL et la sauve temporairement"""
@@ -165,9 +174,11 @@ class ThermalPrinterService:
                                 pass
                 elif cmd == "cut":
                     mode = value if isinstance(value, str) else "PART"
+                    # Ajouter quelques lignes avant le cut pour s'assurer que l'image est imprimée
+                    self.printer._raw(b'\n\n')
                     self.printer.cut(mode)
-                    # Force le vidage du buffer
-                    self.printer._raw(b'\n')
+                    # Forcer l'impression immédiate
+                    self.printer._raw(b'\x0c')  # Form feed
                 elif cmd == "cashdraw":
                     pin = value if isinstance(value, int) else 2
                     self.printer.cashdraw(pin)
@@ -237,22 +248,24 @@ class ThermalPrinterService:
     
     def print_job(self, printer_ip: str, printer_port: int, commands: List[Dict[str, Any]], encoding: str = "utf-8") -> bool:
         """Exécute un job d'impression complet"""
+        connection_success = False
         try:
-            # Toujours s'assurer qu'il n'y a pas de connexion précédente
-            self.disconnect_printer()
-            
-            if not self.connect_printer(printer_ip, printer_port):
+            # Établir la connexion
+            connection_success = self.connect_printer(printer_ip, printer_port)
+            if not connection_success:
                 raise Exception("Impossible de se connecter à l'imprimante")
             
             # Configuration de l'encodage
-            self.printer._raw(bytes(f'\x1b\x74\x10', 'utf-8'))
+            self.printer._raw(bytes(f'\x1b\x74\x10', 'utf-8'))  # UTF-8
+            self.printer._raw(b'\x1b\x40')  # Initialize printer
             
             # Exécution des commandes
             for command in commands:
                 self.execute_command(command)
             
-            # S'assurer que tout est envoyé
-            self.printer._raw(b'\n')
+            # Forcer l'impression finale
+            self.printer._raw(b'\n\n')
+            self.printer._raw(b'\x0c')  # Form feed final
             
             return True
             
@@ -261,4 +274,7 @@ class ThermalPrinterService:
             raise
         finally:
             # Toujours déconnecter
-            self.disconnect_printer()
+            try:
+                self.disconnect_printer()
+            except:
+                pass
