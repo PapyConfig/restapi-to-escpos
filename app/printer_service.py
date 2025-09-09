@@ -1,6 +1,11 @@
 import logging
 from escpos.printer import Network
 from typing import List, Dict, Any
+import requests
+from io import BytesIO
+from PIL import Image
+import os
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +30,22 @@ class ThermalPrinterService:
             except:
                 pass
             self.printer = None
+    
+    def download_image(self, url: str) -> str:
+        """Télécharge une image depuis une URL et la sauve temporairement"""
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            # Créer un fichier temporaire
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+            temp_file.write(response.content)
+            temp_file.close()
+            
+            return temp_file.name
+        except Exception as e:
+            logger.error(f"Erreur de téléchargement de l'image {url}: {str(e)}")
+            raise
     
     def parse_complex_params(self, value: str) -> dict:
         """Parse les paramètres complexes depuis une chaîne"""
@@ -99,12 +120,30 @@ class ThermalPrinterService:
                     else:
                         self.printer.barcode(str(value), 'CODE128')
                 elif cmd == "image":
-                    if isinstance(value, str) and ', ' in value:
-                        img_params = self.parse_complex_params(value)
-                        path = img_params.get('content', str(value))
-                        self.printer.image(path)
-                    else:
-                        self.printer.image(str(value))
+                    temp_file = None
+                    try:
+                        if isinstance(value, str):
+                            if value.startswith('http://') or value.startswith('https://'):
+                                # Télécharger l'image depuis l'URL
+                                temp_file = self.download_image(value)
+                                image_path = temp_file
+                            elif ', ' in value:
+                                # Parser les paramètres image
+                                img_params = self.parse_complex_params(value)
+                                image_path = img_params.get('content', str(value))
+                            else:
+                                image_path = str(value)
+                            
+                            self.printer.image(image_path)
+                        else:
+                            self.printer.image(str(value))
+                    finally:
+                        # Nettoyer le fichier temporaire si nécessaire
+                        if temp_file and os.path.exists(temp_file):
+                            try:
+                                os.unlink(temp_file)
+                            except:
+                                pass
                 elif cmd == "cut":
                     mode = value if isinstance(value, str) else "PART"
                     self.printer.cut(mode)

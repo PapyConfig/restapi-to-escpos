@@ -158,8 +158,16 @@ POST /print
 ```
 
 ### Image
+Prints an image from file path or URL.
 ```json
+// Local file
 {"image": "/path/to/image.png"}
+
+// Image from URL
+{"image": "https://example.com/logo.png"}
+
+// Image with parameters (local file)
+{"image": "/path/to/image.png, width=200, height=100"}
 ```
 
 ### Printer Control
@@ -187,20 +195,20 @@ POST /print
 
 ### Simple Receipt
 ```bash
-curl -X POST "http://localhost:8000/print"   -H "Content-Type: application/json"   -d '{
+curl -X POST "http://localhost:8000/print" \
+  -H "Content-Type: application/json" \
+  -d '{
     "commands": [
       {"align": "center"},
       {"bold": true},
-      {"text": "WELCOME!\n"},
+      {"text": "RECEIPT WITH LOGO\n"},
       {"text": "================\n"},
+      {"align": "center"},
+      {"image": "https://example.com/company-logo.png"},
+      {"text": "\n"},
       {"align": "left"},
-      {"bold": false},
-      {"text": "Coffee          2.50€\n"},
-      {"text": "Croissant       1.80€\n"},
-      {"text": "================\n"},
-      {"align": "right"},
-      {"bold": true},
-      {"text": "TOTAL:        4.30€\n"},
+      {"text": "Item: Product\n"},
+      {"text": "Price: 29.99€\n"},
       {"cut": "PART"}
     ]
   }'
