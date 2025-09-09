@@ -20,6 +20,7 @@ app = FastAPI(
 # Variables d'environnement (nouveaux noms)
 PRINTER_DEFAULT_IP = os.getenv("PRINTER_IP", "192.168.1.100")
 PRINTER_DEFAULT_PORT = int(os.getenv("PRINTER_PORT", "9100"))
+PRINTER_PROFILE = os.getenv("PRINTER_PROFILE", "NT-80-V-UL")
 
 # Middleware CORS
 app.add_middleware(
@@ -56,7 +57,7 @@ async def print_receipt(print_job: PrintJob, printer_ip: str = None, printer_por
     jobs_status[job_id] = "processing"
     
     try:
-        printer_service = ThermalPrinterService()
+        printer_service = ThermalPrinterService(profile=PRINTER_PROFILE)
         success = printer_service.print_job(
             printer_ip=ip,
             printer_port=port,

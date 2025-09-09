@@ -10,13 +10,14 @@ import tempfile
 logger = logging.getLogger(__name__)
 
 class ThermalPrinterService:
-    def __init__(self):
+    def __init__(self, profile: str = 'NT-80-V-UL'):
         self.printer = None
+        self.profile = profile
     
     def connect_printer(self, ip: str, port: int = 9100) -> bool:
         """Établit la connexion avec l'imprimante thermique"""
         try:
-            self.printer = Network(ip, port, timeout=30, profile='NT-80-V-UL')
+            self.printer = Network(ip, port, timeout=30, profile=self.profile)
             return True
         except Exception as e:
             logger.error(f"Erreur de connexion à l'imprimante {ip}:{port} - {str(e)}")
@@ -131,9 +132,27 @@ class ThermalPrinterService:
                                 # Parser les paramètres image
                                 img_params = self.parse_complex_params(value)
                                 image_path = img_params.get('content', str(value))
+                                
+                                # Extraire les paramètres spécifiques à l'image
+                                high_density_vertical = img_params.get('high_density_vertical', True)
+                                high_density_horizontal = img_params.get('high_density_horizontal', True)
+                                impl = img_params.get('impl', 'bitImageRaster')
+                                fragment_height = img_params.get('fragment_height', 960)
+                                center = img_params.get('center', False)
+                                
+                                self.printer.image(
+                                    image_path,
+                                    high_density_vertical=high_density_vertical,
+                                    high_density_horizontal=high_density_horizontal,
+                                    impl=impl,
+                                    fragment_height=fragment_height,
+                                    center=center
+                                )
+                                return  # Image already printed, exit early
                             else:
                                 image_path = str(value)
                             
+                            # Image sans paramètres spécifiques
                             self.printer.image(image_path)
                         else:
                             self.printer.image(str(value))
