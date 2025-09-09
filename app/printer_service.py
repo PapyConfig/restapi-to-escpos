@@ -16,7 +16,7 @@ class ThermalPrinterService:
     def connect_printer(self, ip: str, port: int = 9100) -> bool:
         """Établit la connexion avec l'imprimante thermique"""
         try:
-            self.printer = Network(ip, port, timeout=30)
+            self.printer = Network(ip, port, timeout=30, profile='NT-80-V-UL')
             return True
         except Exception as e:
             logger.error(f"Erreur de connexion à l'imprimante {ip}:{port} - {str(e)}")
