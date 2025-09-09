@@ -39,7 +39,7 @@ class ThermalPrinterService:
             response.raise_for_status()
             
             # Créer un fichier temporaire
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
             temp_file.write(response.content)
             temp_file.close()
             
@@ -166,6 +166,8 @@ class ThermalPrinterService:
                 elif cmd == "cut":
                     mode = value if isinstance(value, str) else "PART"
                     self.printer.cut(mode)
+                    # Force le vidage du buffer
+                    self.printer._raw(b'\n')
                 elif cmd == "cashdraw":
                     pin = value if isinstance(value, int) else 2
                     self.printer.cashdraw(pin)
@@ -236,18 +238,27 @@ class ThermalPrinterService:
     def print_job(self, printer_ip: str, printer_port: int, commands: List[Dict[str, Any]], encoding: str = "utf-8") -> bool:
         """Exécute un job d'impression complet"""
         try:
+            # Toujours s'assurer qu'il n'y a pas de connexion précédente
+            self.disconnect_printer()
+            
             if not self.connect_printer(printer_ip, printer_port):
                 raise Exception("Impossible de se connecter à l'imprimante")
             
+            # Configuration de l'encodage
             self.printer._raw(bytes(f'\x1b\x74\x10', 'utf-8'))
             
+            # Exécution des commandes
             for command in commands:
                 self.execute_command(command)
             
-            self.disconnect_printer()
+            # S'assurer que tout est envoyé
+            self.printer._raw(b'\n')
+            
             return True
             
         except Exception as e:
-            self.disconnect_printer()
             logger.error(f"Erreur d'impression: {str(e)}")
             raise
+        finally:
+            # Toujours déconnecter
+            self.disconnect_printer()
