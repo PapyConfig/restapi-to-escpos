@@ -162,6 +162,7 @@ class ThermalPrinterService:
                                 image_path = str(value)
                             
                             # Image sans paramètres spécifiques
+                            print("Printing image:", image_path)
                             self.printer.image(image_path)
                         else:
                             self.printer.image(str(value))
@@ -175,6 +176,7 @@ class ThermalPrinterService:
                 elif cmd == "cut":
                     mode = value if isinstance(value, str) else "PART"
                     # Ajouter quelques lignes avant le cut pour s'assurer que l'image est imprimée
+                    print("Cutting paper with mode:", mode)
                     self.printer._raw(b'\n\n')
                     self.printer.cut(mode)
                     # Forcer l'impression immédiate
