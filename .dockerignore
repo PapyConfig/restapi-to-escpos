@@ -1,7 +1,6 @@
-__pycache__
-*.pyc
-.git
-.github
-README.md
-LICENSE
-.gitignore
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+**/__pycache__

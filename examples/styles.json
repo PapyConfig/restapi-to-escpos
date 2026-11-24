@@ -1,0 +1,15 @@
+{
+  "commands": [
+    {"type": "style", "align": "center"},
+    {"type": "text", "content": "Normal\n"},
+    {"type": "text", "content": "Gras\n", "bold": true},
+    {"type": "text", "content": "Souligné\n", "underline": 1},
+    {"type": "text", "content": "Police B\n", "font": "b"},
+    {"type": "text", "content": " Inversé \n", "invert": true},
+    {"type": "text", "content": "Double\n", "width": 2, "height": 2},
+    {"type": "text", "content": "x3\n", "width": 3, "height": 3},
+    {"type": "style", "reset": true},
+    {"type": "separator", "char": "*"},
+    {"type": "text", "content": "Retour au style par défaut\n"}
+  ]
+}

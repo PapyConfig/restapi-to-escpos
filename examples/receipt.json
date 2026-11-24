@@ -1,0 +1,15 @@
+{
+  "commands": [
+    {"type": "text", "content": "MA BOUTIQUE\n", "align": "center", "bold": true, "width": 2, "height": 2},
+    {"type": "text", "content": "12 rue de la Paix, 75002 Paris\n", "align": "center"},
+    {"type": "separator"},
+    {"type": "text", "content": "Café crème                3,20 €\n"},
+    {"type": "text", "content": "Pain au chocolat          1,40 €\n"},
+    {"type": "text", "content": "Crêpe sucrée              4,50 €\n"},
+    {"type": "separator", "char": "="},
+    {"type": "text", "content": "TOTAL TTC  9,10 €\n", "align": "right", "bold": true, "height": 2},
+    {"type": "feed", "lines": 1},
+    {"type": "text", "content": "Merci et à bientôt !\n", "align": "center"},
+    {"type": "cut"}
+  ]
+}
