@@ -1,0 +1,16 @@
+services:
+  escpos-api:
+    image: ghcr.io/papyconfig/restapi-to-escpos:latest
+    # build: .            # pour construire localement
+    container_name: escpos-api
+    ports:
+      - "8000:8000"
+    env_file: .env        # cp .env.example .env
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped

@@ -1,268 +1,195 @@
-# 🖨️ Thermal Printer API
+# 🖨️ ESC/POS Print API
 
-REST API for sending **ESC/POS** commands to thermal receipt printers over the network.
+REST API that prints **receipts and images** on network thermal printers (ESC/POS over raw
+TCP, port 9100).
+
+- Typed JSON print jobs: text and styles, separators, QR codes, barcodes, images, cut, cash drawer
+- **Image printing**: upload a file, or embed it in a receipt (base64), auto-scaled to the paper
+  width, dithered or thresholded
+- Atomic jobs: the whole job is rendered and validated **before** anything is sent, so an invalid
+  job prints nothing
+- Several named printers, jobs serialized per printer, non-blocking I/O
+- API key required, no CORS by default, the client can't choose arbitrary hosts, files or URLs
+- Docker image (non-root, healthcheck, amd64 + arm64), interactive docs at `/docs`
 
 ---
 
-## 📋 Features
-- Network printing (TCP/IP) via ESC/POS protocol  
-- Support for most ESC/POS printer commands  
-- RESTful API with **FastAPI**  
-- Docker container support  
-- Public Docker image on GitHub Container Registry  
-- Environment variable configuration  
-- CI/CD with GitHub Actions  
+## 🚀 Quick start
 
----
-
-## 🚀 Quick Start
-
-### Using Docker (Recommended)
 ```bash
-# Pull and run the latest image
-docker run -d   --name thermal-printer-api   -p 8000:8000   -e PRINTER_IP=192.168.1.100   -e PRINTER_PORT=9100   ghcr.io/papyconfig/restapi-to-escpos:latest
+cp .env.example .env          # set API_KEY and PRINTER_HOST
+docker compose up -d
+curl localhost:8000/health
 ```
 
-### Using Docker Compose
-Create a `docker-compose.yml` file:
-```yaml
-version: '3.8'
+Then print the examples:
 
-services:
-  thermal-printer-api:
-    image: ghcr.io/papyconfig/restapi-to-escpos:latest
-    container_name: thermal-printer-api
-    ports:
-      - "8000:8000"
-    environment:
-      - PRINTER_IP=192.168.1.100
-      - PRINTER_PORT=9100
-    restart: unless-stopped
+```bash
+export API_KEY=...            # same value as in .env
+./examples/print.sh printers                 # printer list + reachability
+./examples/print.sh receipt                  # text receipt (accents, €)
+./examples/print.sh full-receipt             # logo + lines + QR + barcode
+./examples/print.sh image examples/logo.png  # image only (upload)
+./examples/print.sh render receipt > out.bin # ESC/POS bytes, nothing printed
 ```
 
-Run with:
+No printer at hand? Run a fake one: `nc -lk 9100 > out.bin`.
+
+### Without Docker
+
 ```bash
-docker-compose up -d
-```
-
-### Local Installation with Python
-```bash
-# Clone the repository
-git clone https://github.com/papyconfig/restapi-to-escpos.git
-cd restapi-to-escpos
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables
-export PRINTER_IP=192.168.1.100
-export PRINTER_PORT=9100
-
-# Run the application
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m venv .venv && . .venv/bin/activate
+pip install -e '.[dev]'
+API_KEY=dev PRINTER_HOST=192.168.1.100 uvicorn escpos_api.main:create_app --factory
 ```
 
 ---
 
-## 🎯 API Usage
+## ⚙️ Configuration (environment variables)
 
-### Main Endpoint
-```http
-POST /print
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_KEY` | – | **Required.** Expected in the `X-API-Key` header of every `/v1` route |
+| `ALLOW_NO_AUTH` | `false` | Allow starting without `API_KEY` (not recommended) |
+| `PRINTER_HOST` | – | Single printer (named `default`) |
+| `PRINTER_PORT` | `9100` | |
+| `PRINTER_WIDTH` | `576` | Printable dots: `576` = 80 mm, `384` = 58 mm paper |
+| `PRINTER_PROFILE` | `default` | [python-escpos profile](https://python-escpos.readthedocs.io/en/latest/printer_profiles/available-profiles.html) (code pages, e.g. `TM-T88V`) |
+| `PRINTERS` | – | Several printers, JSON (replaces `PRINTER_HOST`), see below |
+| `DEFAULT_PRINTER` | first one | Printer used when a request names none |
+| `PRINTER_TIMEOUT` | `10` | Seconds to connect and send a job |
+| `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API |
+| `MAX_REQUEST_BYTES` | `15728640` | Max request body (15 MB) |
+| `MAX_IMAGE_BYTES` | `10485760` | Max image file (10 MB) |
+| `MAX_IMAGE_PIXELS` | `25000000` | Max source image pixels |
+| `MAX_IMAGE_HEIGHT` | `4000` | Max printed image height in dots |
+| `LOG_LEVEL` | `INFO` | |
+
+```bash
+PRINTERS='[{"name":"caisse","host":"192.168.1.100"},
+           {"name":"cuisine","host":"192.168.1.101","width":384,"profile":"TM-T20II"}]'
+DEFAULT_PRINTER=caisse
 ```
 
-#### Basic Print Request
+The container needs a writable `/tmp` (python-escpos caches its profiles there). The provided
+`docker-compose.yml` runs it read-only with a `tmpfs` on `/tmp`.
+
+---
+
+## 📡 API
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| GET | `/health` | Health check (no auth) |
+| GET | `/v1/printers` | Declared printers and whether they are reachable |
+| POST | `/v1/print` | Print a JSON job |
+| POST | `/v1/print/image` | Print an uploaded image (multipart) |
+| POST | `/v1/render` | Return the ESC/POS bytes of a job without printing |
+| GET | `/docs` | Interactive documentation (OpenAPI) |
+
+### Print job
+
 ```json
 {
+  "printer": "caisse",
+  "cut": true,
   "commands": [
-    {"align": "center"},
-    {"bold": true},
-    {"text": "HELLO WORLD\n"},
-    {"cut": "PART"}
+    {"type": "text", "content": "MY SHOP\n", "align": "center", "bold": true, "width": 2, "height": 2},
+    {"type": "separator"},
+    {"type": "text", "content": "Coffee                2.50 €\n"},
+    {"type": "qr", "content": "https://example.com/t/123"},
+    {"type": "cut"}
   ]
 }
 ```
 
-#### Advanced Print Request
-```json
-{
-  "commands": [
-    {"align": "center"},
-    {"bold": true},
-    {"text": "STORE RECEIPT\n"},
-    {"text": "================\n"},
-    {"align": "left"},
-    {"bold": false},
-    {"text": "Item 1        10.00€\n"},
-    {"text": "Item 2        15.50€\n"},
-    {"text": "================\n"},
-    {"align": "right"},
-    {"bold": true},
-    {"text": "TOTAL:       25.50€\n"},
-    {"qr": "https://example.com/receipt/123, size=3, ec=0"},
-    {"barcode": "123456789012, bc=CODE128, height=64, width=3"},
-    {"cut": "PART"}
-  ]
-}
-```
+`printer` is optional (default printer). `cut: true` (default) appends a partial cut unless the
+job already ends with one.
 
----
+### Commands
 
-## 📡 API Endpoints
+| `type` | Fields (default) |
+|--------|------------------|
+| `text` | `content`, plus optional style fields applied **to this text only** |
+| `style` | style fields, persistent until the next `style`; `reset: true` restores defaults |
+| `feed` | `lines` (1) |
+| `separator` | `char` (`-`), fills the line for the current font/width |
+| `qr` | `content`, `size` 1–16 (6), `ec` L/M/Q/H (M), `align` (center) |
+| `barcode` | `content`, `symbology` EAN13/EAN8/UPC-A/UPC-E/CODE39/CODE93/CODE128/ITF/CODABAR (CODE128), `height` (80), `module_width` 2–6 (3), `text_position` none/above/below/both (below), `align` (center) |
+| `image` | `data` (base64 or data URL), `align` (center), `mode` dither/threshold (dither), `threshold` (128), `width` (paper width), `upscale` (false) |
+| `cut` | `mode` partial/full (partial), `feed` (true) |
+| `cashdraw` | `pin` 2 or 5 (2) |
 
-| Endpoint        | Method | Description                 |
-|-----------------|--------|-----------------------------|
-| `/`             | GET    | API homepage with info      |
-| `/health`       | GET    | Health check                |
-| `/print`        | POST   | Main printing endpoint      |
-| `/jobs/{job_id}`| GET    | Get print job status        |
-| `/examples`     | GET    | Get command examples        |
+Style fields: `align` left/center/right, `bold`, `underline` 0–2, `font` a/b, `width` 1–8,
+`height` 1–8, `invert`.
 
----
+### Images
 
-## ⚙️ Environment Variables
+Accepted formats are PNG, JPEG, GIF (first frame), BMP and WebP. Images are rotated according
+to EXIF and transparency becomes white. Images wider than the paper (or than `width`) are
+scaled down; smaller ones are never enlarged unless `upscale` is set. Images are converted to
+black and white with Floyd–Steinberg dithering (photos) or a threshold (logos, text).
 
-| Variable     | Description            | Default Value   |
-|--------------|------------------------|-----------------|
-| `PRINTER_IP` | Default printer IP     | `192.168.1.100` |
-| `PRINTER_PORT` | Default printer port | `9100`          |
-
----
-
-## 📚 Supported ESC/POS Commands
-
-### Text Formatting
-```json
-{"text": "Hello World\n"}
-{"align": "center"}
-{"bold": true}
-{"underline": 1}
-{"font": "a"}
-{"size": "2h"}
-```
-
-### QR Code
-```json
-{"qr": "https://example.com, size=4, ec=0"}
-{"qr": "Hello World, size=3, model=2, ec=1"}
-```
-
-### Barcode
-```json
-{"barcode": "123456789012, bc=EAN13, height=64, width=3"}
-{"barcode": "ABC123, bc=CODE128, pos=BELOW, font=A"}
-```
-
-### Image
-Prints an image from file path or URL.
-```json
-// Local file
-{"image": "/path/to/image.png"}
-
-// Image from URL
-{"image": "https://example.com/logo.png"}
-
-// Image with parameters (local file)
-{"image": "/path/to/image.png, width=200, height=100"}
-```
-
-### Printer Control
-```json
-{"cut": "PART"}
-{"cut": "FULL"}
-{"cashdraw": 2}
-{"feed": 3}
-{"lf": ""}
-{"hw": "INIT"}
-{"control": "LF"}
-```
-
-### Advanced Formatting
-```json
-{"set": {"align": "center", "bold": true, "font": "a"}}
-{"set_line_spacing": 40}
-{"set_barcode_height": 70}
-{"set_barcode_width": 3}
-```
-
----
-
-## 📝 Complete Examples
-
-### Simple Receipt
 ```bash
-curl -X POST "http://localhost:8000/print" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "commands": [
-      {"align": "center"},
-      {"bold": true},
-      {"text": "RECEIPT WITH LOGO\n"},
-      {"text": "================\n"},
-      {"align": "center"},
-      {"image": "https://example.com/company-logo.png"},
-      {"text": "\n"},
-      {"align": "left"},
-      {"text": "Item: Product\n"},
-      {"text": "Price: 29.99€\n"},
-      {"cut": "PART"}
-    ]
-  }'
+curl -H "X-API-Key: $API_KEY" \
+  -F file=@photo.jpg -F align=center -F mode=dither -F cut=true \
+  http://localhost:8000/v1/print/image
 ```
 
-### Receipt with QR Code & Barcode
-```bash
-curl -X POST "http://localhost:8000/print"   -H "Content-Type: application/json"   -d '{
-    "commands": [
-      {"align": "center"},
-      {"bold": true},
-      {"text": "STORE RECEIPT\n"},
-      {"text": "================\n"},
-      {"align": "left"},
-      {"text": "Item: T-Shirt\n"},
-      {"text": "Price: 19.99€\n"},
-      {"qr": "https://store.com/item/123, size=3"},
-      {"barcode": "123456789012, bc=CODE128"},
-      {"cut": "FULL"}
-    ]
-  }'
-```
+Form fields: `printer`, `align`, `mode`, `threshold`, `width`, `upscale`, `cut` (true).
 
-### Custom Formatting
-```bash
-curl -X POST "http://localhost:8000/print"   -H "Content-Type: application/json"   -d '{
-    "commands": [
-      {"set": {"align": "center", "bold": true, "size": "2h"}},
-      {"text": "IMPORTANT\n"},
-      {"set": {"align": "left", "bold": false, "size": "normal"}},
-      {"text": "This is normal text\n"},
-      {"set": {"underline": 1}},
-      {"text": "Underlined text\n"},
-      {"set": {"underline": 0}},
-      {"cut": "PART"}
-    ]
-  }'
-```
+### Errors
+
+Every error has the form `{"error": "<code>", "message": "...", "details": [...]}`.
+
+| HTTP | `error` | When |
+|------|---------|------|
+| 401 | `unauthorized` | Missing or wrong `X-API-Key` |
+| 404 | `unknown_printer` | Printer name not declared |
+| 413 | `payload_too_large` | Request or image too big |
+| 422 | `invalid_job` / `invalid_image` | Invalid job; `details[].index` points at the faulty command. Nothing is printed |
+| 502 | `printer_unreachable` | Connection refused or host unreachable |
+| 504 | `printer_timeout` | Printer did not accept the data within `PRINTER_TIMEOUT` |
 
 ---
+
+## 🔁 Migrating from v1
+
+v2 is a rewrite with a new, versioned contract:
+
+- `POST /print` → `POST /v1/print`. Commands are objects with a `type`: `{"bold": true}` +
+  `{"text": "..."}` becomes `{"type": "text", "content": "...", "bold": true}`.
+- The `"content, key=value"` mini-syntax is gone: `{"qr": "https://x, size=4"}` becomes
+  `{"type": "qr", "content": "https://x", "size": 4}`.
+- Images are no longer fetched from URLs or read from local paths. Send them as base64 or upload
+  them to `/v1/print/image`.
+- The `printer_ip`/`printer_port` query parameters are gone. Declare printers with
+  `PRINTER_HOST` or `PRINTERS` and pass `"printer": "<name>"`.
+- `PRINTER_IP` is now called `PRINTER_HOST`, and `API_KEY` is required.
+- `/jobs/{id}` and `/examples` are removed. Printing is synchronous, and examples live in
+  `examples/` and `/docs`.
+
+---
+
+## 🧑‍💻 Development
+
+The project uses [Spec Kit](https://github.com/github/spec-kit) (spec-driven development):
+
+- `.specify/memory/constitution.md`: project principles (security, typed contract, atomic
+  printing, hardware-free tests, simplicity)
+- `specs/001-escpos-print-api/`: spec, plan, research, data model, HTTP contract, tasks
+- `.claude/skills/speckit-*`: the `/speckit-*` commands for Claude Code
+
+```bash
+pip install -e '.[dev]'
+ruff check . && ruff format --check .
+pytest --cov=escpos_api
+```
+
+Tests run without a printer: rendering is checked as bytes, and delivery against a fake TCP
+printer. CI runs lint and tests, builds the image, smoke-tests the container, and only then
+pushes to `ghcr.io` (`latest` from `main`, semver tags from `v*`).
 
 ## 📄 License
-**MIT License** – See [LICENSE](./LICENSE) for details.  
-If you use this code, please provide attribution to the original repository.
 
----
-
-## 🤝 Contributing
-- Fork the repository  
-- Create a feature branch  
-- Commit your changes  
-- Push to the branch  
-- Open a Pull Request  
-
----
-
-> Built with ❤️ for the open-source community
+MIT. See [LICENSE](./LICENSE).

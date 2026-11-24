@@ -1,0 +1,11 @@
+{
+  "commands": [
+    {"type": "text", "content": "SCANNEZ-MOI\n", "align": "center", "bold": true},
+    {"type": "qr", "content": "https://example.com/ticket/42?ref=a,b,c", "size": 8, "ec": "Q"},
+    {"type": "feed"},
+    {"type": "barcode", "content": "4006381333931", "symbology": "EAN13"},
+    {"type": "feed"},
+    {"type": "barcode", "content": "CMD-2026-0042", "symbology": "CODE128", "height": 60, "module_width": 2},
+    {"type": "cut"}
+  ]
+}
