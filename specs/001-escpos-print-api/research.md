@@ -71,3 +71,25 @@
   `python:3.13-slim`, venv copié, utilisateur `app`, `HEALTHCHECK` via Python (pas de curl) ;
   CI GitHub Actions : ruff + pytest (cov) → build → smoke test (`/health` dans le conteneur)
   → push ghcr.io avec `GITHUB_TOKEN`, multi-arch amd64/arm64 sur tag `v*` et `main`.
+
+## R9. Fin de job perdue après une image (correctif 2026-11-25)
+
+- **Symptôme** : sur l'imprimante du homelab, une image s'imprime puis ni avance ni coupe, et le
+  port 9100 reste parfois bloqué jusqu'au redémarrage. Un ticket texte seul est coupé normalement.
+  Le défaut existait déjà en v1. Le flux envoyé est pourtant cohérent octet par octet
+  (diagnostic du 2026-11-25).
+- **Cause 1 (reproduite)** : fermeture TCP. Une imprimante qui renvoie des octets d'état (ASB)
+  laisse des données non lues dans notre socket ; le `close()` envoie alors un RST au lieu d'un
+  FIN, et l'imprimante jette ce qu'elle n'a pas encore lu : la fin du raster, l'avance et la
+  coupe. Ça ne touche que les gros jobs, d'où le lien avec les images. Reproduit avec une
+  imprimante factice : 512 octets reçus sur 53 725 avant le correctif, 53 725 après.
+- **Décision** : après l'envoi, demi-fermeture (`write_eof`) puis lecture jusqu'à ce que
+  l'imprimante ferme ou que `PRINTER_CLOSE_GRACE` (5 s) expire, puis fermeture. Ça se fait
+  en tâche de fond après la réponse HTTP ; le verrou de l'imprimante est gardé pendant ce temps.
+- **Cause 2 (diagnostic, plausible)** : une commande raster unique de 53 Ko (image de 746 points,
+  sous le seuil de fragmentation de 960 de python-escpos) peut saturer le tampon de certaines
+  imprimantes.
+- **Décision** : fragmentation configurable par imprimante (`image_fragment_height`, 128 par
+  défaut) et choix de la commande image (`image_impl` : raster, colonne, graphics).
+- **Alternatives** : réduire l'image côté client (contournement) ; attendre un acquittement
+  d'état (`DLE EOT`), mais le support varie selon les modèles.

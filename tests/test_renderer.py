@@ -156,3 +156,19 @@ def test_image_works_with_any_profile(profile, capsys):
     out = render_image(png_bytes(size=(2000, 50)), ImageOptions(), False, printer, LIMITS)
     assert b"\x1dv0" in out
     assert "media.width" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("fragment, expected", [(128, 6), (256, 3), (960, 1)])
+def test_image_fragmentation(fragment, expected):
+    printer = PrinterConfig(name="p", host="h", image_fragment_height=fragment)
+    out = render_image(png_bytes(size=(576, 746)), ImageOptions(), False, printer, LIMITS)
+    assert out.count(b"\x1dv0") == expected
+
+
+@pytest.mark.parametrize("impl, marker", [("bitImageColumn", b"\x1b*"), ("graphics", b"\x1d(L")])
+def test_image_impl(impl, marker):
+    printer = PrinterConfig(name="p", host="h", image_impl=impl)
+    out = render_image(png_bytes(size=(200, 100)), ImageOptions(), True, printer, LIMITS)
+    assert marker in out
+    assert b"\x1dv0" not in out
+    assert out.endswith(PARTIAL_CUT)

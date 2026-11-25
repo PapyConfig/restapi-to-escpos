@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Annotated
+from typing import Annotated, Literal
 
 from escpos.capabilities import CAPABILITIES
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 PrinterName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,31}$")]
+ImageImpl = Literal["bitImageRaster", "bitImageColumn", "graphics"]
 
 
 class PrinterConfig(BaseModel):
@@ -20,6 +21,16 @@ class PrinterConfig(BaseModel):
     port: int = Field(default=9100, ge=1, le=65535)
     width: int = Field(default=576, ge=64, le=2048, description="Printable width in dots")
     profile: str = "default"
+    image_impl: ImageImpl = Field(
+        default="bitImageRaster",
+        description="ESC/POS image command: GS v 0 (raster), ESC * (column) or GS ( L (graphics)",
+    )
+    image_fragment_height: int = Field(
+        default=128,
+        ge=24,
+        le=2048,
+        description="Images taller than this are sent as several smaller image commands",
+    )
 
     @field_validator("width")
     @classmethod
@@ -51,6 +62,9 @@ class Settings(BaseSettings):
     printer_port: int = 9100
     printer_width: int = 576
     printer_profile: str = "default"
+    printer_image_impl: ImageImpl = "bitImageRaster"
+    printer_image_fragment_height: int = 128
+    printer_close_grace: float = Field(default=5.0, ge=0, le=60)
     printers: list[PrinterConfig] = Field(default_factory=list)
     default_printer: str | None = None
     printer_timeout: float = Field(default=10.0, gt=0, le=120)
@@ -87,6 +101,8 @@ class Settings(BaseSettings):
                     port=self.printer_port,
                     width=self.printer_width,
                     profile=self.printer_profile,
+                    image_impl=self.printer_image_impl,
+                    image_fragment_height=self.printer_image_fragment_height,
                 )
             ]
         if not self.printers:

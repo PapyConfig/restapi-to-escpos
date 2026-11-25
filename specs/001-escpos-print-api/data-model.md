@@ -11,6 +11,8 @@ Aucune persistance : ce sont les modèles du contrat et de la configuration.
 | port | int | 1–65535, défaut 9100 |
 | width | int | points imprimables, 64–2048, multiple de 8, défaut 576 |
 | profile | str | profil python-escpos, défaut `default` ; validé au démarrage |
+| image_impl | enum | `bitImageRaster` (défaut), `bitImageColumn`, `graphics` |
+| image_fragment_height | int | 24–2048, défaut 128 : hauteur max d'une commande image |
 
 Colonnes de texte dérivées : police A = `width // 12`, police B = `width // 9`.
 

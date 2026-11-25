@@ -89,7 +89,11 @@ class Renderer:
     def _image(self, data: bytes, opts: ImageOptions) -> None:
         img = decode(data, self.limits)
         bitmap = to_bitmap(img, opts, self.printer.width, self.limits.max_height)
-        self.out.image(bitmap, impl="bitImageRaster")
+        self.out.image(
+            bitmap,
+            impl=self.printer.image_impl,
+            fragment_height=self.printer.image_fragment_height,
+        )
 
     # -- commands --------------------------------------------------------------
 
