@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Tickets</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">tickets<span class="brand-cursor" aria-hidden="true">_</span></h1>
+    <label class="printer-picker">
+      <span class="printer-dot" id="printer-dot" aria-hidden="true"></span>
+      <span class="visually-hidden">Imprimante</span>
+      <select id="printer-select" aria-label="Imprimante">
+        <option value="">Chargement…</option>
+      </select>
+    </label>
+  </header>
+
+  <main class="layout">
+    <section class="bench" aria-label="Composer le ticket">
+      <nav class="tabs" role="tablist" aria-label="Mode">
+        <button role="tab" id="tab-templates" aria-controls="panel-templates" aria-selected="true">Modèles</button>
+        <button role="tab" id="tab-editor" aria-controls="panel-editor" aria-selected="false">Éditeur</button>
+        <button role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false">Historique</button>
+      </nav>
+
+      <div role="tabpanel" id="panel-templates" aria-labelledby="tab-templates"></div>
+      <div role="tabpanel" id="panel-editor" aria-labelledby="tab-editor" hidden></div>
+      <div role="tabpanel" id="panel-history" aria-labelledby="tab-history" hidden></div>
+    </section>
+
+    <aside class="printer" aria-label="Aperçu et impression">
+      <div class="printer-body">
+        <div class="printer-slot" aria-hidden="true"></div>
+        <div class="paper-wrap">
+          <div class="paper" id="paper">
+            <canvas id="preview" role="img" aria-label="Aperçu du ticket"></canvas>
+          </div>
+        </div>
+      </div>
+      <p class="warnings" id="warnings" role="status"></p>
+      <div class="print-bar">
+        <span class="paper-info" id="paper-info"></span>
+        <button class="print-button" id="print-button" type="button" disabled>Imprimer</button>
+      </div>
+    </aside>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="key-dialog" aria-labelledby="key-title">
+    <form method="dialog" id="key-form">
+      <h2 id="key-title">Clé API</h2>
+      <p>Le serveur demande la clé API. Elle reste dans cet onglet et disparaît à sa fermeture.</p>
+      <label>Clé
+        <input type="password" id="key-input" autocomplete="off" required>
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" type="button" id="key-cancel" class="ghost">Annuler</button>
+        <button value="ok" class="primary">Utiliser la clé</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="name-dialog" aria-labelledby="name-title">
+    <form method="dialog" id="name-form">
+      <h2 id="name-title">Enregistrer comme modèle</h2>
+      <p id="name-help"></p>
+      <label>Nom du modèle
+        <input type="text" id="name-input" maxlength="60" required>
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" type="button" id="name-cancel" class="ghost">Annuler</button>
+        <button value="ok" class="primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

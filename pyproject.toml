@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "escpos-api"
-version = "2.0.0"
+version = "2.1.0"
 description = "REST API that renders JSON print jobs and images to ESC/POS network printers"
 readme = "README.md"
 license = "MIT"
@@ -30,6 +30,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+escpos_api = ["ui/*"]
 
 [tool.ruff]
 line-length = 100

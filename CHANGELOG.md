@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.1.0 (unreleased)
+
+Specified with Spec Kit (`specs/002-web-ticket-ui/`).
+
+### Added
+- Optional web UI on `/ui/` (`UI_ENABLED=true`, off by default): 10 built-in memo templates
+  (memo, to-do, shopping list, XXL sticky note, note in a frame, reminder with QR, guest Wi-Fi,
+  Kanban card, daily journal, quote of the day), a block editor covering every command, a
+  paper-width live preview, personal templates with `{{variables}}` (export/import) and the
+  last 30 prints, all stored in the browser. No build step, no external resource, strict CSP.
+- Origin check: browser write requests from a foreign origin are refused with
+  `403 forbidden_origin` (CSRF protection when a reverse proxy injects the API key). Clients
+  that send no `Origin` header (curl, n8n…) are unaffected.
+
 ## 2.0.0 (unreleased)
 
 Complete rewrite, specified with Spec Kit (`specs/001-escpos-print-api/`).

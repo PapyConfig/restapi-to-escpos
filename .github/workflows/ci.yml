@@ -25,6 +25,10 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest --cov=escpos_api --cov-report=term-missing --cov-fail-under=90
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test 'tests/js/*.test.mjs'
 
   docker:
     needs: test
@@ -47,7 +51,7 @@ jobs:
       - name: Smoke test (starts, healthy, auth enforced, renders)
         run: |
           docker run -d --name api -p 8000:8000 \
-            -e API_KEY=ci -e PRINTER_HOST=127.0.0.1 escpos-api:ci
+            -e API_KEY=ci -e PRINTER_HOST=127.0.0.1 -e UI_ENABLED=true escpos-api:ci
           for i in $(seq 1 30); do
             curl -fsS localhost:8000/health && break
             sleep 1
@@ -57,6 +61,12 @@ jobs:
           curl -fsS -H 'X-API-Key: ci' -H 'Content-Type: application/json' \
             --data-binary @examples/full-receipt.json localhost:8000/v1/render -o out.bin
           test -s out.bin
+          curl -fsS -D headers.txt localhost:8000/ui/ -o /dev/null
+          grep -qi "content-security-policy: default-src 'none'" headers.txt
+          curl -fsS localhost:8000/ui/app.js -o /dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-API-Key: ci' \
+            -H 'Origin: https://evil.example' -H 'Content-Type: application/json' \
+            --data-binary @examples/receipt.json localhost:8000/v1/render)" = 403
           test "$(docker inspect --format '{{.Config.User}}' escpos-api:ci)" = app
 
       - name: Container logs

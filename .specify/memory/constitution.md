@@ -15,6 +15,9 @@ Le service pilote du matériel physique (imprimante, tiroir-caisse) sur un rése
   distantes (pas de SSRF) : les images arrivent dans la requête.
 - Les entrées MUST être bornées (taille de requête, nombre de commandes, dimensions d'image).
 - Les messages d'erreur renvoyés au client MUST NOT exposer de détails internes (traces, chemins).
+- Une requête d'écriture émise par un navigateur depuis une origine non autorisée MUST être
+  refusée (le reverse proxy peut injecter la clé API) ; les pages servies MUST porter une CSP
+  stricte sans ressource externe.
 
 Rationale : la v1 permettait l'impression/ouverture de tiroir depuis n'importe quelle page web
 (CORS `*`), le relais TCP vers n'importe quel hôte et la lecture de fichiers du conteneur.
@@ -45,6 +48,9 @@ Rationale : la v1 permettait l'impression/ouverture de tiroir depuis n'importe q
 
 - Une seule responsabilité : JSON/HTTP → ESC/POS/TCP. Pas de base de données, pas de file
   persistante, pas de téléchargement d'images.
+- Seule exception admise : une interface web **statique** optionnelle (désactivée par défaut),
+  sans build ni dépendance, qui n'imprime que via le contrat public `/v1` et ne garde ses
+  données que dans le navigateur.
 - Dépendances minimales, toutes déclarées et épinglées ; une dépendance importée mais non
   déclarée (ou l'inverse) est un défaut bloquant.
 
@@ -72,4 +78,4 @@ redéfini ; MINOR : principe ajouté ; PATCH : formulation). Chaque revue de PR 
 la conformité aux principes I à V ; toute entorse MUST être justifiée dans le plan
 (section « Complexity Tracking »).
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-24 | **Last Amended**: 2026-11-24
+**Version**: 1.1.0 | **Ratified**: 2026-11-24 | **Last Amended**: 2026-11-25
