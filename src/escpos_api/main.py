@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,6 +16,7 @@ from .api import public, v1
 from .config import Settings
 from .errors import ApiError
 from .transport import Transport
+from .ui import mount_ui
 
 log = logging.getLogger("escpos_api")
 
@@ -61,6 +63,43 @@ class BodyLimitMiddleware:
         await JSONResponse(error.body(), status_code=413)(scope, receive, send)
 
 
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+class OriginCheckMiddleware:
+    """Refuse browser write requests coming from a foreign origin (CSRF).
+
+    A reverse proxy may inject the API key for authenticated SSO users, so a third-party page
+    must not be able to make the browser submit a print job. Browsers always send `Origin` on
+    cross-origin POSTs; clients without `Origin` (curl, n8n) are unaffected. The scheme is not
+    compared because TLS is usually terminated by the proxy.
+    """
+
+    def __init__(self, app: ASGIApp, allowed_origins: list[str]) -> None:
+        self.app = app
+        self.allowed = {o.rstrip("/").lower() for o in allowed_origins}
+
+    def _allowed(self, origin: str, host: str) -> bool:
+        origin = origin.rstrip("/").lower()
+        if origin in self.allowed:
+            return True
+        parts = urlsplit(origin)
+        return parts.scheme in ("http", "https") and bool(host) and parts.netloc == host
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] in _UNSAFE_METHODS:
+            headers = dict(scope.get("headers") or [])
+            origin = headers.get(b"origin")
+            if origin is not None:
+                host = headers.get(b"host", b"").decode("latin-1").lower()
+                if not self._allowed(origin.decode("latin-1"), host):
+                    log.warning("refused cross-origin %s %s", scope["method"], scope["path"])
+                    error = ApiError(403, "forbidden_origin", "Cross-origin request refused.")
+                    await JSONResponse(error.body(), status_code=403)(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     logging.basicConfig(
@@ -98,6 +137,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(public)
     app.include_router(v1)
+    if settings.ui_enabled:
+        mount_ui(app)
 
     if settings.cors_origins:
         app.add_middleware(
@@ -106,6 +147,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["GET", "POST"],
             allow_headers=["Content-Type", "X-API-Key"],
         )
+    app.add_middleware(OriginCheckMiddleware, allowed_origins=settings.cors_origins)
     app.add_middleware(BodyLimitMiddleware, limit=settings.max_request_bytes)
 
     log.info(
@@ -115,4 +157,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings.default_printer,
         "" if settings.api_key else " - WARNING: authentication disabled",
     )
+    if settings.ui_enabled:
+        log.info("Web UI enabled on /ui/")
     return app

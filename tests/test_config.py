@@ -67,3 +67,11 @@ def test_columns():
     assert p.columns("a") == 48
     assert p.columns("b") == 64
     assert p.columns("a", 2) == 24
+
+
+def test_ui_disabled_by_default_and_enabled_from_env(monkeypatch):
+    monkeypatch.setenv("API_KEY", "k")
+    monkeypatch.setenv("PRINTER_HOST", "10.0.0.5")
+    assert Settings(_env_file=None).ui_enabled is False
+    monkeypatch.setenv("UI_ENABLED", "true")
+    assert Settings(_env_file=None).ui_enabled is True

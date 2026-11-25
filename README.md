@@ -11,6 +11,7 @@ TCP, port 9100).
 - Several named printers, jobs serialized per printer, non-blocking I/O
 - API key required, no CORS by default, the client can't choose arbitrary hosts, files or URLs
 - Docker image (non-root, healthcheck, amd64 + arm64), interactive docs at `/docs`
+- Optional **web UI** to print memos from templates or a block editor, with live preview
 
 ---
 
@@ -59,6 +60,7 @@ API_KEY=dev PRINTER_HOST=192.168.1.100 uvicorn escpos_api.main:create_app --fact
 | `DEFAULT_PRINTER` | first one | Printer used when a request names none |
 | `PRINTER_TIMEOUT` | `10` | Seconds to connect and send a job |
 | `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the API |
+| `UI_ENABLED` | `false` | Serve the web UI on `/ui/` (see below) |
 | `MAX_REQUEST_BYTES` | `15728640` | Max request body (15 MB) |
 | `MAX_IMAGE_BYTES` | `10485760` | Max image file (10 MB) |
 | `MAX_IMAGE_PIXELS` | `25000000` | Max source image pixels |
@@ -86,6 +88,7 @@ The container needs a writable `/tmp` (python-escpos caches its profiles there).
 | POST | `/v1/print/image` | Print an uploaded image (multipart) |
 | POST | `/v1/render` | Return the ESC/POS bytes of a job without printing |
 | GET | `/docs` | Interactive documentation (OpenAPI) |
+| GET | `/ui/` | Web UI, only with `UI_ENABLED=true` (`/` redirects there) |
 
 ### Print job
 
@@ -145,11 +148,49 @@ Every error has the form `{"error": "<code>", "message": "...", "details": [...]
 | HTTP | `error` | When |
 |------|---------|------|
 | 401 | `unauthorized` | Missing or wrong `X-API-Key` |
+| 403 | `forbidden_origin` | Browser request from an origin that is neither this host nor in `CORS_ORIGINS` |
 | 404 | `unknown_printer` | Printer name not declared |
 | 413 | `payload_too_large` | Request or image too big |
 | 422 | `invalid_job` / `invalid_image` | Invalid job; `details[].index` points at the faulty command. Nothing is printed |
 | 502 | `printer_unreachable` | Connection refused or host unreachable |
 | 504 | `printer_timeout` | Printer did not accept the data within `PRINTER_TIMEOUT` |
+
+---
+
+## 🧾 Web UI
+
+`UI_ENABLED=true` serves a static page on `/ui/` (no build, no external resource, strict CSP):
+
+- **Templates**: memo, to-do list, shopping list, XXL sticky note, note in a frame, reminder
+  with a QR link, guest Wi-Fi QR code, Kanban card with a barcode, daily journal, quote of the day.
+- **Editor**: text with styles, separators, spaces, QR codes, barcodes, images, cuts; reorder,
+  duplicate, delete. API validation errors are shown on the faulty block.
+- **Preview** at the paper width of the selected printer (80/58 mm), with dithered images and a
+  warning for characters the printer can't print.
+- **My templates**: save a ticket as a template; `{{name}}` becomes a field to fill in.
+  Export/import as JSON. The last 30 prints can be reprinted. Everything stays in the browser.
+
+The page calls `/v1` like any client. Behind an SSO reverse proxy, let the proxy add the
+`X-API-Key` header so the browser never holds the key; opened directly, the page asks for the
+key and keeps it for the tab only. Example with Traefik (keep the key out of git, e.g. render
+this file from a secret store):
+
+```yaml
+http:
+  middlewares:
+    tickets-apikey:
+      headers:
+        customRequestHeaders:
+          X-API-Key: "<API_KEY>"
+  routers:
+    tickets:
+      rule: "Host(`tickets.example.com`)"
+      middlewares: [sso-forward-auth, tickets-apikey]
+      service: escpos-api
+```
+
+Because the proxy authenticates the browser, the API refuses write requests whose `Origin` is
+another site (`403 forbidden_origin`), so a third-party page can't print through your session.
 
 ---
 
@@ -178,12 +219,14 @@ The project uses [Spec Kit](https://github.com/github/spec-kit) (spec-driven dev
 - `.specify/memory/constitution.md`: project principles (security, typed contract, atomic
   printing, hardware-free tests, simplicity)
 - `specs/001-escpos-print-api/`: spec, plan, research, data model, HTTP contract, tasks
+- `specs/002-web-ticket-ui/`: web UI
 - `.claude/skills/speckit-*`: the `/speckit-*` commands for Claude Code
 
 ```bash
 pip install -e '.[dev]'
 ruff check . && ruff format --check .
 pytest --cov=escpos_api
+node --test 'tests/js/*.test.mjs'   # web UI logic (Node 22+, no npm install)
 ```
 
 Tests run without a printer: rendering is checked as bytes, and delivery against a fake TCP

@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     printer_timeout: float = Field(default=10.0, gt=0, le=120)
 
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    ui_enabled: bool = False
 
     max_request_bytes: int = 15 * 1024 * 1024
     max_image_bytes: int = 10 * 1024 * 1024
