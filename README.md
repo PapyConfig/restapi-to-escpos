@@ -55,6 +55,9 @@ API_KEY=dev PRINTER_HOST=192.168.1.100 uvicorn escpos_api.main:create_app --fact
 | `PRINTER_PORT` | `9100` | |
 | `PRINTER_WIDTH` | `576` | Printable dots: `576` = 80 mm, `384` = 58 mm paper |
 | `PRINTER_PROFILE` | `default` | [python-escpos profile](https://python-escpos.readthedocs.io/en/latest/printer_profiles/available-profiles.html) (code pages, e.g. `TM-T88V`) |
+| `PRINTER_IMAGE_IMPL` | `bitImageRaster` | Image command: `bitImageRaster` (`GS v 0`), `bitImageColumn` (`ESC *`, most tolerant) or `graphics` (`GS ( L`) |
+| `PRINTER_IMAGE_FRAGMENT_HEIGHT` | `128` | Images taller than this many dots are sent as several image commands (small printer buffers) |
+| `PRINTER_CLOSE_GRACE` | `5` | Seconds to wait, after sending, for the printer to close the connection (keeps the job's tail from being lost). The next job on the same printer waits meanwhile |
 | `PRINTERS` | – | Several printers, JSON (replaces `PRINTER_HOST`), see below |
 | `DEFAULT_PRINTER` | first one | Printer used when a request names none |
 | `PRINTER_TIMEOUT` | `10` | Seconds to connect and send a job |
@@ -67,7 +70,8 @@ API_KEY=dev PRINTER_HOST=192.168.1.100 uvicorn escpos_api.main:create_app --fact
 
 ```bash
 PRINTERS='[{"name":"caisse","host":"192.168.1.100"},
-           {"name":"cuisine","host":"192.168.1.101","width":384,"profile":"TM-T20II"}]'
+           {"name":"cuisine","host":"192.168.1.101","width":384,"profile":"TM-T20II",
+            "image_impl":"bitImageColumn","image_fragment_height":96}]'
 DEFAULT_PRINTER=caisse
 ```
 

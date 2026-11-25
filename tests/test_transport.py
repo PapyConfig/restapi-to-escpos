@@ -84,3 +84,59 @@ async def test_probe(printer):
     t = Transport(2)
     assert await t.probe(PrinterConfig(name="p", host="127.0.0.1", port=printer.port))
     assert not await t.probe(PrinterConfig(name="p", host="127.0.0.1", port=free_port()))
+
+
+async def test_printer_sending_status_bytes_gets_the_whole_job():
+    """Regression: unread status bytes used to turn our close into a TCP RST, and the
+    printer discarded the unread tail of the job (end of image, feed, cut)."""
+    received = bytearray()
+    done = asyncio.Event()
+
+    async def handler(reader, writer):
+        writer.write(b"\x14\x00\x00\x0f")  # Automatic Status Back
+        await writer.drain()
+        try:
+            while chunk := await reader.read(512):  # slow printer
+                received.extend(chunk)
+                await asyncio.sleep(0.001)
+        except ConnectionResetError:
+            pass
+        done.set()
+        writer.close()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    payload = b"\x1b@" + b"\xaa" * 53712 + b"\n" * 5 + b"\x1bd\x06\x1dV\x00"
+    transport = Transport(10)
+    await transport.send(PrinterConfig(name="p", host="127.0.0.1", port=port), payload)
+    await asyncio.wait_for(done.wait(), 10)
+    await transport.aclose()
+    server.close()
+    assert bytes(received) == payload
+
+
+async def test_printer_that_never_closes_releases_lock_after_grace():
+    async def handler(reader, writer):
+        await reader.read()  # reads until our FIN, then keeps the socket open
+        await asyncio.sleep(5)
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    cfg = PrinterConfig(name="p", host="127.0.0.1", port=port)
+    transport = Transport(5, close_grace=0.3)
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    await transport.send(cfg, b"first")
+    assert loop.time() - start < 0.2  # the caller does not wait for the grace period
+    await transport.send(cfg, b"second")  # waits for the first job to linger out
+    assert loop.time() - start >= 0.3
+    await transport.aclose()
+    server.close()
+
+
+async def test_lock_released_after_failure():
+    cfg = PrinterConfig(name="p", host="127.0.0.1", port=free_port())
+    transport = Transport(1)
+    for _ in range(2):  # would deadlock if the first failure kept the lock
+        with pytest.raises(PrinterUnreachable):
+            await asyncio.wait_for(transport.send(cfg, b"x"), 2)

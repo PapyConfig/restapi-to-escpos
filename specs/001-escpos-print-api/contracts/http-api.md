@@ -50,6 +50,8 @@ POST /v1/print
 | `PRINTERS` | – | JSON : `[{"name":"caisse","host":"10.0.0.5","width":576}, ...]` |
 | `DEFAULT_PRINTER` | première | nom de l'imprimante par défaut |
 | `PRINTER_TIMEOUT` | `10` | secondes (connexion + envoi) |
+| `PRINTER_IMAGE_IMPL` / `PRINTER_IMAGE_FRAGMENT_HEIGHT` | bitImageRaster / 128 | commande image et fragmentation (imprimante `default`) ; clés `image_impl` / `image_fragment_height` dans `PRINTERS` |
+| `PRINTER_CLOSE_GRACE` | `5` | secondes d'attente de la fermeture par l'imprimante après l'envoi |
 | `CORS_ORIGINS` | vide | origines autorisées, séparées par des virgules |
 | `MAX_REQUEST_BYTES` | 15 Mo | |
 | `MAX_IMAGE_BYTES` | 10 Mo | |
