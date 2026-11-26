@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 
-from escpos_api.config import PrinterConfig
+from escpos_api.config import PrinterConfig, Settings
 from escpos_api.main import create_app
 from escpos_api.models import PrintJob
 from escpos_api.renderer import render_job
@@ -163,3 +163,9 @@ def test_printable_ranges_match_renderer(main_printer, limits):
     # characters just outside the table really are unprintable
     for char in "☐✓★→♥":
         assert not _prints_as_is(char, main_printer, limits)
+
+
+def test_ui_image_height_limit_matches_server_default():
+    source = (UI_DIR / "preview.js").read_text(encoding="utf-8")
+    js = int(re.search(r"IMAGE_MAX_HEIGHT = (\d+);", source).group(1))
+    assert js == Settings.model_fields["max_image_height"].default

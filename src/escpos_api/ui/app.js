@@ -6,13 +6,13 @@ import {
   findVariables, isEmptyTicket, newBlock, ticketTitle, toJob, unprintable, withIds,
 } from "./job.js";
 import { errorsByField, initialValues, localNow, missingRequired } from "./templates.js";
-import { decodeImage, draw, layout, toBitmap } from "./preview.js";
+import { decodeImage, draw, layout, shrinkImage, toBitmap } from "./preview.js";
 import { addHistory, exportTemplates, importTemplates, makeStore } from "./storage.js";
 
 const store = makeStore(globalThis.localStorage);
 const session = makeStore(globalThis.sessionStorage);
 
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 30 * 1024 * 1024; // before shrinking in the browser
 
 const state = {
   tab: "templates",
@@ -736,7 +736,7 @@ async function loadImage(block, input) {
   const file = input.files?.[0];
   if (!file) return;
   if (file.size > MAX_IMAGE_BYTES) {
-    toast("Image trop lourde : 10 Mo au maximum.", "error");
+    toast("Image trop lourde : 30 Mo au maximum.", "error");
     return;
   }
   const data = await new Promise((resolve, reject) => {
@@ -745,7 +745,14 @@ async function loadImage(block, input) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-  block.data = data;
+  // Shrink to the widest printer before sending: lighter request, and no oversized image.
+  const maxWidth = Math.max(576, ...state.printers.map((p) => p.width));
+  try {
+    block.data = await shrinkImage(data, maxWidth);
+  } catch {
+    toast("Image illisible : utilise un PNG, JPEG, GIF, BMP ou WebP.", "error");
+    return;
+  }
   block.name = file.name.slice(0, 40);
   changed({ rerender: true });
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { barcodeModules, layout, monochrome, qrModules, wrapChars } from "../../src/escpos_api/ui/preview.js";
+import { IMAGE_MAX_HEIGHT, barcodeModules, fitSize, layout, monochrome, qrModules, wrapChars } from "../../src/escpos_api/ui/preview.js";
 
 const text = (content, style = {}) => ({ type: "text", content, ...style });
 
@@ -88,4 +88,17 @@ test("monochrome threshold and dither", () => {
   const black = out.filter((v) => v === 0).length;
   assert.ok(black > 30 && black < 70, `mid-grey dithers to ~50% black, got ${black}`);
   assert.ok(out.every((v) => v === 0 || v === 255));
+});
+
+test("fitSize keeps the ratio and never enlarges", () => {
+  assert.deepEqual(fitSize(4000, 3000, 576), { width: 576, height: 432 });
+  assert.deepEqual(fitSize(1000, 10000, 576), { width: 200, height: 2000 });
+  assert.deepEqual(fitSize(100, 50, 576), { width: 100, height: 50 });
+  assert.equal(IMAGE_MAX_HEIGHT, 2000);
+});
+
+test("a very tall image is previewed at the server's maximum height", () => {
+  const row = layout([{ type: "image", data: "x" }], 576, () => ({ width: 1000, height: 10000 })).rows.find((r) => r.kind === "image");
+  assert.equal(row.height, 2000);
+  assert.equal(row.width, 200);
 });

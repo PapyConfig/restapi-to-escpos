@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.3.0 (unreleased)
+
+Specified with Spec Kit (`specs/004-image-safety/`).
+
+### Fixed
+- The cut of a job with a large image could happen at the start of the next ticket: the
+  printer acknowledged the data long before printing it, and the end of the job was only
+  processed when the next connection arrived. After each job the API now sends `GS r 1` and
+  keeps the connection (and the printer's lock) until the printer answers, which it does
+  once it has processed everything sent before. `PRINTER_WAIT_DONE` (default `true`,
+  `wait_done` per printer) and `PRINTER_DONE_TIMEOUT` (default 30 s). The log says how long
+  the printer took (`processed the job in … ms`).
+
+### Changed
+- Images taller than `MAX_IMAGE_HEIGHT` are scaled down to fit instead of being refused; the
+  default goes from 4000 to 2000 dots (25 cm).
+- The web UI shrinks an image in the browser before sending it (widest printer, 2000 dots
+  high at most): a 12 MB photo becomes about 200 KB. Files up to 30 MB are accepted.
+
 ## 2.2.0 (unreleased)
 
 Specified with Spec Kit (`specs/003-api-templates/`).

@@ -31,6 +31,11 @@ class PrinterConfig(BaseModel):
         le=2048,
         description="Images taller than this are sent as several smaller image commands",
     )
+    wait_done: bool = Field(
+        default=True,
+        description="After a job, ask the printer for its status (GS r) and keep the "
+        "connection until it answers, i.e. until it has processed the whole job",
+    )
 
     @field_validator("width")
     @classmethod
@@ -65,6 +70,8 @@ class Settings(BaseSettings):
     printer_image_impl: ImageImpl = "bitImageRaster"
     printer_image_fragment_height: int = 128
     printer_close_grace: float = Field(default=5.0, ge=0, le=60)
+    printer_wait_done: bool = True
+    printer_done_timeout: float = Field(default=30.0, gt=0, le=300)
     printers: list[PrinterConfig] = Field(default_factory=list)
     default_printer: str | None = None
     printer_timeout: float = Field(default=10.0, gt=0, le=120)
@@ -75,7 +82,7 @@ class Settings(BaseSettings):
     max_request_bytes: int = 15 * 1024 * 1024
     max_image_bytes: int = 10 * 1024 * 1024
     max_image_pixels: int = 25_000_000
-    max_image_height: int = 4000
+    max_image_height: int = Field(default=2000, ge=24, le=20000)
 
     log_level: str = "INFO"
 
@@ -103,6 +110,7 @@ class Settings(BaseSettings):
                     profile=self.printer_profile,
                     image_impl=self.printer_image_impl,
                     image_fragment_height=self.printer_image_fragment_height,
+                    wait_done=self.printer_wait_done,
                 )
             ]
         if not self.printers:

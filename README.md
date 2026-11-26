@@ -58,6 +58,8 @@ API_KEY=dev PRINTER_HOST=192.168.1.100 uvicorn escpos_api.main:create_app --fact
 | `PRINTER_PROFILE` | `default` | [python-escpos profile](https://python-escpos.readthedocs.io/en/latest/printer_profiles/available-profiles.html) (code pages, e.g. `TM-T88V`) |
 | `PRINTER_IMAGE_IMPL` | `bitImageRaster` | Image command: `bitImageRaster` (`GS v 0`), `bitImageColumn` (`ESC *`, most tolerant) or `graphics` (`GS ( L`) |
 | `PRINTER_IMAGE_FRAGMENT_HEIGHT` | `128` | Images taller than this many dots are sent as several image commands (small printer buffers) |
+| `PRINTER_WAIT_DONE` | `true` | After each job, ask the printer for its status (`GS r`) and keep the connection until it answers, i.e. until it has really processed the job (cut included). The next job waits for it. Set `false` for a printer that never answers |
+| `PRINTER_DONE_TIMEOUT` | `30` | Seconds to wait for that answer (a long image can take a while to print) |
 | `PRINTER_CLOSE_GRACE` | `5` | Seconds to wait, after sending, for the printer to close the connection (keeps the job's tail from being lost). The next job on the same printer waits meanwhile |
 | `PRINTERS` | – | Several printers, JSON (replaces `PRINTER_HOST`), see below |
 | `DEFAULT_PRINTER` | first one | Printer used when a request names none |
@@ -67,14 +69,14 @@ API_KEY=dev PRINTER_HOST=192.168.1.100 uvicorn escpos_api.main:create_app --fact
 | `MAX_REQUEST_BYTES` | `15728640` | Max request body (15 MB) |
 | `MAX_IMAGE_BYTES` | `10485760` | Max image file (10 MB) |
 | `MAX_IMAGE_PIXELS` | `25000000` | Max source image pixels |
-| `MAX_IMAGE_HEIGHT` | `4000` | Max printed image height in dots |
+| `MAX_IMAGE_HEIGHT` | `2000` | Max printed image height in dots (25 cm at 80 mm): taller images are scaled down to fit |
 | `LOG_LEVEL` | `INFO` | |
 | `TZ` | `UTC` | Time zone of the dates printed by the memo templates (e.g. `Europe/Paris`) |
 
 ```bash
 PRINTERS='[{"name":"caisse","host":"192.168.1.100"},
            {"name":"cuisine","host":"192.168.1.101","width":384,"profile":"TM-T20II",
-            "image_impl":"bitImageColumn","image_fragment_height":96}]'
+            "image_impl":"bitImageColumn","image_fragment_height":96,"wait_done":false}]'
 DEFAULT_PRINTER=caisse
 ```
 

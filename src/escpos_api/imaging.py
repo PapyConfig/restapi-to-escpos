@@ -73,8 +73,9 @@ def to_bitmap(
         height = max(1, round(img.height * target / img.width))
         img = img.resize((target, height), Image.Resampling.LANCZOS)
 
-    if img.height > max_height:
-        raise InvalidImage(f"Image would print {img.height} dots high; maximum is {max_height}.")
+    if img.height > max_height:  # too long a ticket: shrink to fit, keeping the ratio
+        width = max(1, round(img.width * max_height / img.height))
+        img = img.resize((width, max_height), Image.Resampling.LANCZOS)
 
     if opts.mode == "threshold":
         bitmap = img.point(lambda p: 255 if p >= opts.threshold else 0).convert(
