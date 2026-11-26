@@ -62,6 +62,7 @@ test("empty ticket detection", () => {
 test("ticket title", () => {
   assert.equal(ticketTitle([newBlock("separator"), newBlock("text", { content: "\n  Courses du jour \nlait" })]), "Courses du jour");
   assert.equal(ticketTitle([newBlock("text", { content: "╔══╗" })], "Mémo"), "Mémo");
+  assert.equal(ticketTitle([newBlock("text", { content: "«\n" }), newBlock("text", { content: "  Que sais-je ?\n" })]), "Que sais-je ?");
   assert.equal(ticketTitle([], "Mémo"), "Mémo");
 });
 

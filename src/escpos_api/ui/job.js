@@ -136,7 +136,7 @@ export function isEmptyTicket(blocks) {
 export function ticketTitle(blocks, fallback = "Ticket") {
   for (const b of blocks) {
     if (b.type !== "text") continue;
-    const line = b.content.split("\n").map((l) => l.trim()).find(Boolean);
+    const line = b.content.split("\n").map((l) => l.trim()).find((l) => /[\p{L}\p{N}]/u.test(l));
     if (line) return line.replace(/[═─│║╔╗╚╝┌┐└┘]/g, "").trim().slice(0, 60) || fallback;
   }
   return fallback;
@@ -188,6 +188,7 @@ export function errorMessage(status, body) {
     case "printer_unreachable": return "Imprimante injoignable : vérifie qu'elle est allumée et sur le réseau.";
     case "printer_timeout": return "L'imprimante ne répond pas (délai dépassé). Vérifie le papier et réessaie.";
     case "unknown_printer": return "Cette imprimante n'est plus déclarée sur le serveur.";
+    case "unknown_template": return "Ce modèle n'existe plus sur le serveur : recharge la page.";
     case "payload_too_large": return "Ticket trop lourd : réduis ou retire une image.";
     case "invalid_job":
     case "invalid_image": return "Le ticket contient un bloc invalide : il est signalé en rouge. Rien n'a été imprimé.";

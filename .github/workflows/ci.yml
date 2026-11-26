@@ -67,6 +67,9 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-API-Key: ci' \
             -H 'Origin: https://evil.example' -H 'Content-Type: application/json' \
             --data-binary @examples/receipt.json localhost:8000/v1/render)" = 403
+          curl -fsS -H 'X-API-Key: ci' -H 'Content-Type: application/json' \
+            -d '{"values": {"taches": "Pain"}}' localhost:8000/v1/templates/todo/render \
+            | grep -q '"type":"separator"'
           test "$(docker inspect --format '{{.Config.User}}' escpos-api:ci)" = app
 
       - name: Container logs

@@ -219,6 +219,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .block textarea { min-height: 44px; }
 
 .block-error { color: var(--roll); font-weight: 600; margin: 6px 0 0; }
+.field .field-error { color: var(--roll); font-weight: 600; }
+.field [aria-invalid="true"] { border-color: var(--roll); box-shadow: inset 0 0 0 1px var(--roll); }
 .block-warn { color: var(--warn); margin: 6px 0 0; font-size: 0.92rem; }
 
 .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; margin-top: 8px; }

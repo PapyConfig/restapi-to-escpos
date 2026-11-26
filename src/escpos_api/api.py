@@ -23,9 +23,13 @@ from .models import (
     PrinterInfo,
     PrintJob,
     PrintResult,
+    TemplateInfo,
+    TemplateRenderRequest,
+    TemplateRequest,
 )
 from .renderer import render_image, render_job
 from .security import require_api_key
+from .templates import TEMPLATES, TEMPLATES_BY_ID, Template, render_template
 from .transport import Transport
 
 log = logging.getLogger("escpos_api")
@@ -149,3 +153,50 @@ async def render(job: PrintJob, settings: SettingsDep) -> Response:
     return Response(
         data, media_type="application/octet-stream", headers={"X-Escpos-Bytes": str(len(data))}
     )
+
+
+def _template(template_id: str) -> Template:
+    template = TEMPLATES_BY_ID.get(template_id)
+    if template is None:
+        raise ApiError(404, "unknown_template", f"Template {template_id!r} does not exist.")
+    return template
+
+
+@v1.get("/templates", response_model=list[TemplateInfo], tags=["templates"])
+async def list_templates() -> list[TemplateInfo]:
+    """Built-in memo templates and their fields."""
+    return [t.info() for t in TEMPLATES]
+
+
+@v1.get("/templates/{template_id}", response_model=TemplateInfo, tags=["templates"])
+async def get_template(template_id: str) -> TemplateInfo:
+    return _template(template_id).info()
+
+
+@v1.post(
+    "/templates/{template_id}/render",
+    response_model=PrintJob,
+    response_model_exclude_none=True,
+    tags=["templates"],
+)
+async def render_template_job(
+    template_id: str, request: TemplateRenderRequest, settings: SettingsDep
+) -> PrintJob:
+    """Fill a template and return its print job (accepted as is by `/v1/print`) without printing."""
+    template = _template(template_id)
+    printer = _printer(settings, request.printer)
+    return render_template(template, request, printer, partial=request.partial)
+
+
+@v1.post("/templates/{template_id}/print", response_model=PrintResult, tags=["templates"])
+async def print_template(
+    template_id: str, request: TemplateRequest, settings: SettingsDep, transport: TransportDep
+) -> PrintResult:
+    """Fill a template and print it."""
+    started = time.perf_counter()
+    template = _template(template_id)
+    printer = _printer(settings, request.printer)
+    job = render_template(template, request, printer)
+    data = await run_in_threadpool(render_job, job, printer, _limits(settings))
+    kind = f"template:{template.id}"
+    return await _deliver(transport, printer, data, started, kind, len(job.commands))
