@@ -117,7 +117,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
     )
     app.state.settings = settings
-    app.state.transport = Transport(settings.printer_timeout, settings.printer_close_grace)
+    app.state.transport = Transport(
+        settings.printer_timeout, settings.printer_close_grace, settings.printer_done_timeout
+    )
 
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:

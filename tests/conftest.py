@@ -12,6 +12,7 @@ from PIL import Image
 from escpos_api.config import PrinterConfig, Settings
 from escpos_api.imaging import ImageLimits
 from escpos_api.main import create_app
+from escpos_api.transport import GS_R_PAPER
 
 API_KEY = "test-key"
 HEADERS = {"X-API-Key": API_KEY}
@@ -22,6 +23,7 @@ class FakePrinter:
 
     def __init__(self, delay: float = 0.0) -> None:
         self.jobs: list[bytes] = []
+        self.status_requests = 0
         self.connections = 0
         self.active = 0
         self.max_active = 0
@@ -33,12 +35,17 @@ class FakePrinter:
         self.connections += 1
         self.active += 1
         self.max_active = max(self.max_active, self.active)
-        chunks = []
+        received = bytearray()
         while data := await reader.read(65536):
-            chunks.append(data)
+            received.extend(data)
             if self.delay:
                 await asyncio.sleep(self.delay)
-        self.jobs.append(b"".join(chunks))
+            if received.endswith(GS_R_PAPER):  # status request: answer "paper present"
+                del received[-len(GS_R_PAPER) :]
+                self.status_requests += 1
+                writer.write(b"\x00")
+                await writer.drain()
+        self.jobs.append(bytes(received))
         self.active -= 1
         writer.close()
 

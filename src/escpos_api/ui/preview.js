@@ -113,6 +113,7 @@ export function layout(blocks, paper, imageSize = () => null) {
         if (src) {
           if (src.width <= w && !b.upscale) w = src.width;
           h = Math.max(1, Math.round((src.height * w) / src.width));
+          if (h > IMAGE_MAX_HEIGHT) ({ width: w, height: h } = fitSize(w, h, w)); // like the server
         }
         push({ kind: "image", width: w, height: h, align: b.align ?? "center", block: b, ready: !!src, index });
         break;
@@ -297,6 +298,38 @@ export function draw(canvas, result, paper, bitmapFor = () => null, highlight = 
       default: break;
     }
   }
+}
+
+/** Same default as the server's MAX_IMAGE_HEIGHT: taller images are scaled down to fit. */
+export const IMAGE_MAX_HEIGHT = 2000;
+
+/** Largest size within maxWidth × maxHeight keeping the ratio; never enlarges. */
+export function fitSize(width, height, maxWidth, maxHeight = IMAGE_MAX_HEIGHT) {
+  const scale = Math.min(1, maxWidth / width, maxHeight / height);
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
+/**
+ * Shrink an image (data URL) to what the printer can use before sending it: at most
+ * `maxWidth` dots wide and IMAGE_MAX_HEIGHT high, on white (transparency is printed white).
+ * PNG when it stays small (logos, text), else JPEG (photos). Browser only.
+ */
+export async function shrinkImage(dataUrl, maxWidth) {
+  const decoded = await decodeImage(dataUrl);
+  const size = fitSize(decoded.width, decoded.height, maxWidth);
+  if (size.width === decoded.width && size.height === decoded.height && dataUrl.length < 600_000) {
+    return dataUrl;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, size.width, size.height);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(decoded.source, 0, 0, size.width, size.height);
+  const png = canvas.toDataURL("image/png");
+  return png.length < 600_000 ? png : canvas.toDataURL("image/jpeg", 0.9);
 }
 
 /** Decode an image block into {width, height, source}. Browser only. */

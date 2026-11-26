@@ -1,7 +1,7 @@
 import io
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageOps
 
 from escpos_api.errors import ApiError
 from escpos_api.imaging import ImageLimits, InvalidImage, decode, to_bitmap
@@ -91,9 +91,11 @@ def test_threshold_vs_dither():
     assert dithered.getextrema() == (0, 255)  # mix of black and white
 
 
-def test_max_height():
-    with pytest.raises(InvalidImage, match="high"):
-        to_bitmap(Image.new("L", (100, 5000)), ImageOptions(), 576, 4000)
+def test_too_tall_image_is_scaled_down_to_fit():
+    out = to_bitmap(Image.new("L", (1000, 10000)), ImageOptions(), 576, 2000)
+    assert out.size == (576, 2000)  # 576 x 5760 after width scaling, then shrunk to fit
+    black = ImageOps.invert(out.convert("L")).getbbox()
+    assert black == (288 - 100, 0, 288 + 100, 2000)  # 200 x 2000, centered
 
 
 def test_exif_orientation():

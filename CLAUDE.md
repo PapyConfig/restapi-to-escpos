@@ -7,7 +7,8 @@ REST API → ESC/POS network printers. Python 3.12+, FastAPI, python-escpos (ren
 
 - Principles: `.specify/memory/constitution.md` (non-negotiable; check every change against it).
 - Features: `specs/001-escpos-print-api/` (API), `specs/002-web-ticket-ui/` (web UI),
-  `specs/003-api-templates/` (memo templates in the API).
+  `specs/003-api-templates/` (memo templates in the API), `specs/004-image-safety/` (end-of-job
+  confirmation, image size).
 - Behaviour changes go through the spec first: `/speckit-specify` → `/speckit-clarify`
   (optional) → `/speckit-plan` → `/speckit-tasks` → `/speckit-implement`.
 
