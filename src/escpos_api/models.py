@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -196,3 +197,66 @@ class ErrorResponse(BaseModel):
     error: str
     message: str
     details: list[dict[str, object]] | None = None
+
+
+# -- built-in memo templates -------------------------------------------------------------
+
+FieldType = Literal["text", "textarea", "date", "time", "select", "checkbox"]
+
+
+class TemplateOption(BaseModel):
+    value: str
+    label: str
+
+
+class TemplateField(BaseModel):
+    key: str
+    label: str
+    type: FieldType
+    required: bool = False
+    max: int | None = Field(default=None, description="Maximum length of a text value")
+    default: str | bool | None = Field(default=None, description="Used when the key is omitted")
+    options: list[TemplateOption] | None = None
+    placeholder: str | None = None
+    auto: Literal["today", "now", "id"] | None = Field(
+        default=None, description="Computed value (date, time, card id) when the key is omitted"
+    )
+
+
+class TemplateInfo(BaseModel):
+    id: str
+    name: str
+    glyph: str
+    description: str
+    fields: list[TemplateField]
+
+
+class TemplateRequest(_Strict):
+    """Body of `/v1/templates/{id}/print`."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"values": {"taches": "Pain\nLait\nCafé"}}]},
+    )
+
+    printer: str | None = Field(default=None, description="Printer name; default if omitted")
+    values: dict[str, object] = Field(
+        default_factory=dict, description="Field values, validated against the template"
+    )
+    cut: bool = True
+    now: datetime | None = Field(
+        default=None,
+        description="Local date and time printed on the ticket; server time if omitted",
+    )
+    seed: int | None = Field(
+        default=None, ge=0, description="Makes random parts (quote) reproducible"
+    )
+
+
+class TemplateRenderRequest(TemplateRequest):
+    """Body of `/v1/templates/{id}/render`."""
+
+    partial: bool = Field(
+        default=False,
+        description="Preview while typing: required fields may be omitted or empty",
+    )

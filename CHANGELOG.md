@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.2.0 (unreleased)
+
+Specified with Spec Kit (`specs/003-api-templates/`).
+
+### Added
+- Memo templates in the API: `GET /v1/templates`, `GET /v1/templates/{id}`,
+  `POST /v1/templates/{id}/render` (print job, no printing) and `POST /v1/templates/{id}/print`.
+  Values are validated per field (`422` naming the field); `now` and `seed` make a render
+  reproducible; `partial` allows empty required fields for a live preview.
+- `TZ` sets the time zone of the dates printed by the templates.
+
+### Changed
+- The 10 built-in templates moved from the web UI to the server (single source of truth). The UI
+  lists and renders them through the API; personal `{{variable}}` templates are unchanged.
+- Long values no longer overflow the line on 58 mm paper (signature, recipient, Wi-Fi password,
+  quote author); a Kanban id too wide for a barcode is printed as text.
+
 ## 2.1.0 (unreleased)
 
 Specified with Spec Kit (`specs/002-web-ticket-ui/`).

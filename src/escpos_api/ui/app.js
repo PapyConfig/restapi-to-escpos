@@ -1,10 +1,11 @@
 // Web UI: DOM, state and API calls. Pure logic lives in job.js / templates.js / preview.js.
+// Built-in templates are listed and rendered by the server (/v1/templates).
 
 import {
   BLOCK_TYPES, LIMITS, SYMBOLOGIES, columnsFor, errorMessage, errorsByBlock, fillVariables,
   findVariables, isEmptyTicket, newBlock, ticketTitle, toJob, unprintable, withIds,
 } from "./job.js";
-import { TEMPLATES, buildTemplate, initialValues, missingRequired } from "./templates.js";
+import { errorsByField, initialValues, localNow, missingRequired } from "./templates.js";
 import { decodeImage, draw, layout, toBitmap } from "./preview.js";
 import { addHistory, exportTemplates, importTemplates, makeStore } from "./storage.js";
 
@@ -19,6 +20,10 @@ const state = {
   printer: store.read("printer", null),
   template: null, // {kind: "builtin"|"user", def}
   values: {},
+  builtins: null, // GET /v1/templates (null while loading)
+  builtinsError: null,
+  rendered: [], // blocks of the built-in template, rendered by the server
+  fieldErrors: {},
   blocks: store.read("draft", null) ?? starterBlocks(),
   userTemplates: store.read("templates", []),
   history: store.read("history", []),
@@ -81,6 +86,7 @@ async function loadPrinters() {
   );
   updatePrinterDot();
   render();
+  scheduleTemplateRender(0);
 }
 
 function updatePrinterDot() {
@@ -152,17 +158,13 @@ function askName(help) {
 
 // -- current ticket -----------------------------------------------------------------------
 
-function ctx() {
-  return { columns: columnsFor(paperWidth()), now: new Date(), quoteIndex: state.quoteIndex };
-}
-
 /** Blocks shown in the preview and printed, for the active tab. */
 function currentBlocks() {
   if (state.tab === "editor") return state.blocks;
   if (state.tab === "history") return state.historyPick?.job.commands ?? [];
   if (!state.template) return [];
   if (state.template.kind === "user") return fillVariables(state.template.def.blocks, state.values);
-  return buildTemplate(state.template.def, state.values, ctx());
+  return state.rendered;
 }
 
 function canPrint() {
@@ -177,14 +179,19 @@ function canPrint() {
 
 async function printCurrent() {
   if (!canPrint()) return;
-  const blocks = currentBlocks();
   const printer = currentPrinter();
-  const job = toJob(blocks, { printer: printer.name });
   state.busy = true;
   state.errors = {};
   renderPrintBar();
   $("print-button").textContent = "Impression…";
   try {
+    let blocks = currentBlocks();
+    if (state.tab === "templates" && state.template?.kind === "builtin") {
+      blocks = await renderTemplateNow(false); // fresh render: what is printed is what is shown
+      if (!blocks) return;
+      setFieldErrors({});
+    }
+    const job = toJob(blocks, { printer: printer.name });
     await api("/v1/print", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -198,7 +205,11 @@ async function printCurrent() {
     void paper.offsetWidth;
     paper.classList.add("feeding");
   } catch (err) {
-    if (err.status === 422 && err.body) {
+    const fields = err.status === 422 ? errorsByField(err.body) : {};
+    if (Object.keys(fields).length) {
+      setFieldErrors(fields);
+      toast("Un champ est invalide : il est signalé en rouge. Rien n'a été imprimé.", "error");
+    } else if (err.status === 422 && err.body) {
       state.errors = errorsByBlock(err.body);
       if (state.tab !== "editor" && Object.keys(state.errors).length) {
         toast(`${err.message} Ouvre le ticket dans l'éditeur pour corriger.`, "error");
@@ -214,6 +225,69 @@ async function printCurrent() {
     $("print-button").textContent = "Imprimer";
     if (state.tab === "editor") renderEditor();
     render();
+  }
+}
+
+// -- built-in templates, rendered by the server -------------------------------------------
+
+async function loadTemplates() {
+  state.builtinsError = null;
+  try {
+    state.builtins = await api("/v1/templates");
+  } catch (err) {
+    state.builtins = [];
+    state.builtinsError = err.message;
+  }
+  if (state.tab === "templates" && !state.template) renderTemplates();
+}
+
+let renderSeq = 0;
+let renderTimer = 0;
+
+/** Render the open built-in template. Resolves to null if a newer render superseded it. */
+async function renderTemplateNow(partial = true) {
+  clearTimeout(renderTimer);
+  const tpl = state.template;
+  const seq = ++renderSeq;
+  const body = { printer: currentPrinter()?.name, values: state.values, now: localNow(), seed: state.quoteIndex };
+  if (partial) body.partial = true;
+  const job = await api(`/v1/templates/${encodeURIComponent(tpl.def.id)}/render`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (seq !== renderSeq || state.template !== tpl) return null;
+  state.rendered = withIds(job.commands);
+  return state.rendered;
+}
+
+/** Preview while typing: debounced, errors shown on the fields. */
+function scheduleTemplateRender(delay = 150) {
+  if (state.template?.kind !== "builtin") return;
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(async () => {
+    try {
+      if (await renderTemplateNow(true)) setFieldErrors({});
+    } catch (err) {
+      const fields = err.status === 422 ? errorsByField(err.body) : {};
+      if (Object.keys(fields).length) setFieldErrors(fields);
+      else toast(err.message, "error");
+    }
+    render();
+  }, delay);
+}
+
+function setFieldErrors(errors) {
+  state.fieldErrors = errors;
+  for (const f of state.template?.kind === "builtin" ? state.template.def.fields : []) {
+    const input = document.getElementById(`f-${f.key}`);
+    const note = document.getElementById(`fe-${f.key}`);
+    if (!input || !note) continue;
+    const reason = errors[f.key];
+    note.textContent = reason ? `Valeur refusée : ${reason}` : "";
+    note.hidden = !reason;
+    if (reason) input.setAttribute("aria-invalid", "true");
+    else input.removeAttribute("aria-invalid");
   }
 }
 
@@ -296,7 +370,16 @@ function renderTemplates() {
         h("span", { class: "glyph", "aria-hidden": "true" }, glyph),
         h("span", {}, h("span", { class: "template-name" }, name), h("span", { class: "template-desc" }, desc))));
 
-  const builtin = TEMPLATES.map((t) => item(t.glyph, t.name, t.description, () => openTemplate({ kind: "builtin", def: t })));
+  let builtin;
+  if (state.builtinsError) {
+    builtin = h("p", { class: "empty" }, `Modèles indisponibles. ${state.builtinsError} `,
+      h("button", { class: "secondary small", type: "button", onclick: loadTemplates }, "Réessayer"));
+  } else if (state.builtins === null) {
+    builtin = h("p", { class: "empty" }, "Chargement des modèles…");
+  } else {
+    builtin = h("ul", { class: "template-list" },
+      state.builtins.map((t) => item(t.glyph, t.name, t.description, () => openTemplate({ kind: "builtin", def: t }))));
+  }
   const mine = state.userTemplates.map((t) =>
     h("li", { class: "user-template" },
       h("button", { class: "template-item", type: "button", onclick: () => openTemplate({ kind: "user", def: t }) },
@@ -312,7 +395,7 @@ function renderTemplates() {
   const importInput = h("input", { type: "file", accept: "application/json,.json", onchange: (e) => importFile(e.target) });
   panel.replaceChildren(
     h("h2", { class: "section-title" }, "Mémos"),
-    h("ul", { class: "template-list" }, builtin),
+    builtin,
     h("h2", { class: "section-title" }, "Mes modèles"),
     mine.length
       ? h("ul", { class: "template-list" }, mine)
@@ -331,10 +414,13 @@ function fieldsSummary(t) {
 function openTemplate(tpl) {
   state.template = tpl;
   state.quoteIndex = Math.floor(Math.random() * 1000); // stable between preview and print
+  state.rendered = [];
+  state.fieldErrors = {};
   if (tpl.kind === "builtin") state.values = initialValues(tpl.def);
   else state.values = Object.fromEntries(findVariables(tpl.def.blocks).map((v) => [v, ""]));
   renderTemplates();
   render();
+  scheduleTemplateRender(0);
   $("panel-templates").querySelector("input, textarea, select")?.focus();
 }
 
@@ -348,37 +434,39 @@ function templateForm() {
   const t = state.template;
   const onInput = (key, value) => {
     state.values[key] = value;
-    render();
+    if (t.kind === "builtin") scheduleTemplateRender();
+    else render();
   };
+  const errorNote = (f) => h("small", { class: "field-error", id: `fe-${f.key}`, hidden: true });
   const fields = templateFields().map((f) => {
     const id = `f-${f.key}`;
     if (f.type === "checkbox") {
       return h("label", { class: "check" },
-        h("input", { type: "checkbox", id, checked: state.values[f.key], onchange: (e) => onInput(f.key, e.target.checked) }),
-        f.label);
+        h("input", { type: "checkbox", id, checked: state.values[f.key], "aria-describedby": `fe-${f.key}`, onchange: (e) => onInput(f.key, e.target.checked) }),
+        f.label, errorNote(f));
     }
     let control;
     if (f.type === "textarea") {
-      control = h("textarea", { id, maxlength: f.max, placeholder: f.placeholder, rows: 4, oninput: (e) => onInput(f.key, e.target.value) });
+      control = h("textarea", { id, maxlength: f.max, placeholder: f.placeholder, rows: 4, "aria-describedby": `fe-${f.key}`, oninput: (e) => onInput(f.key, e.target.value) });
       control.value = state.values[f.key] ?? "";
     } else if (f.type === "select") {
-      control = h("select", { id, onchange: (e) => onInput(f.key, e.target.value) },
-        f.options.map(([v, label]) => h("option", { value: v, selected: state.values[f.key] === v }, label)));
+      control = h("select", { id, "aria-describedby": `fe-${f.key}`, onchange: (e) => onInput(f.key, e.target.value) },
+        f.options.map((o) => h("option", { value: o.value, selected: state.values[f.key] === o.value }, o.label)));
     } else {
-      control = h("input", { id, type: f.type === "date" || f.type === "time" ? f.type : "text", maxlength: f.max, placeholder: f.placeholder, value: state.values[f.key] ?? "", oninput: (e) => onInput(f.key, e.target.value), required: f.required });
+      control = h("input", { id, type: f.type === "date" || f.type === "time" ? f.type : "text", maxlength: f.max, placeholder: f.placeholder, value: state.values[f.key] ?? "", "aria-describedby": `fe-${f.key}`, oninput: (e) => onInput(f.key, e.target.value), required: f.required });
     }
-    return h("label", { class: "field", for: id }, h("span", {}, f.label, f.required ? " *" : ""), control);
+    return h("label", { class: "field", for: id }, h("span", {}, f.label, f.required ? " *" : ""), control, errorNote(f));
   });
 
   const extra = [];
   if (t.kind === "builtin" && t.def.id === "quote") {
-    extra.push(h("button", { class: "secondary", type: "button", onclick: () => { state.quoteIndex = Math.floor(Math.random() * 1000); render(); } }, "Une autre citation"));
+    extra.push(h("button", { class: "secondary", type: "button", onclick: () => { state.quoteIndex = Math.floor(Math.random() * 1000); scheduleTemplateRender(0); } }, "Une autre citation"));
   }
 
   return h("div", {},
     h("div", { class: "form-head" },
       h("h2", {}, t.def.name),
-      h("button", { class: "ghost small", type: "button", onclick: () => { state.template = null; renderTemplates(); render(); } }, "Tous les modèles")),
+      h("button", { class: "ghost small", type: "button", onclick: () => { state.template = null; state.rendered = []; renderTemplates(); render(); } }, "Tous les modèles")),
     t.kind === "builtin" ? h("p", { class: "template-desc" }, t.def.description) : null,
     h("form", { onsubmit: (e) => { e.preventDefault(); printCurrent(); } }, fields),
     h("div", { class: "actions" },
@@ -725,6 +813,7 @@ function boot() {
     store.write("printer", state.printer);
     updatePrinterDot();
     render();
+    scheduleTemplateRender(0); // layout depends on the paper width
   });
   $("print-button").addEventListener("click", printCurrent);
   document.addEventListener("keydown", (e) => {
@@ -734,7 +823,7 @@ function boot() {
     }
   });
   setTab("templates");
-  loadPrinters();
+  loadPrinters().then(loadTemplates); // one after the other: a single key prompt on 401
 }
 
 boot();

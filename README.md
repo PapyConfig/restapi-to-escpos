@@ -69,6 +69,7 @@ API_KEY=dev PRINTER_HOST=192.168.1.100 uvicorn escpos_api.main:create_app --fact
 | `MAX_IMAGE_PIXELS` | `25000000` | Max source image pixels |
 | `MAX_IMAGE_HEIGHT` | `4000` | Max printed image height in dots |
 | `LOG_LEVEL` | `INFO` | |
+| `TZ` | `UTC` | Time zone of the dates printed by the memo templates (e.g. `Europe/Paris`) |
 
 ```bash
 PRINTERS='[{"name":"caisse","host":"192.168.1.100"},
@@ -91,6 +92,10 @@ The container needs a writable `/tmp` (python-escpos caches its profiles there).
 | POST | `/v1/print` | Print a JSON job |
 | POST | `/v1/print/image` | Print an uploaded image (multipart) |
 | POST | `/v1/render` | Return the ESC/POS bytes of a job without printing |
+| GET | `/v1/templates` | Built-in memo templates and their fields |
+| GET | `/v1/templates/{id}` | One template |
+| POST | `/v1/templates/{id}/render` | Fill a template and return its print job, without printing |
+| POST | `/v1/templates/{id}/print` | Fill a template and print it |
 | GET | `/docs` | Interactive documentation (OpenAPI) |
 | GET | `/ui/` | Web UI, only with `UI_ENABLED=true` (`/` redirects there) |
 
@@ -154,10 +159,46 @@ Every error has the form `{"error": "<code>", "message": "...", "details": [...]
 | 401 | `unauthorized` | Missing or wrong `X-API-Key` |
 | 403 | `forbidden_origin` | Browser request from an origin that is neither this host nor in `CORS_ORIGINS` |
 | 404 | `unknown_printer` | Printer name not declared |
+| 404 | `unknown_template` | Template id does not exist |
 | 413 | `payload_too_large` | Request or image too big |
-| 422 | `invalid_job` / `invalid_image` | Invalid job; `details[].index` points at the faulty command. Nothing is printed |
+| 422 | `invalid_job` / `invalid_image` | Invalid job; `details[].index` points at the faulty command (`details[].loc` = `["body", "values", "<field>"]` for a template value). Nothing is printed |
 | 502 | `printer_unreachable` | Connection refused or host unreachable |
 | 504 | `printer_timeout` | Printer did not accept the data within `PRINTER_TIMEOUT` |
+
+### Memo templates
+
+Ten ready-made memos, laid out for the paper width of the printer (80 or 58 mm). Send only the
+values; omitted fields take their default (today's date, a card id…).
+
+| `id` | Memo | Required field |
+|------|------|----------------|
+| `memo` | Title, message, signature, date | `message` |
+| `todo` | Tasks to tick off (`taches`, one per line), due date, priority | `taches` |
+| `shopping` | Shopping list (`articles`, one per line), two columns when short | `articles` |
+| `postit` | Two or three words, huge | `texte` |
+| `note` | A note for someone, in a frame | `message` |
+| `reminder` | What, when, details and a QR code for a link | `quoi` |
+| `wifi` | Guest Wi-Fi QR code | `ssid` |
+| `kanban` | Kanban card with a barcode id | `titre` |
+| `journal` | Three wins, a thank-you, a mood | – |
+| `quote` | Quote of the day (random, or yours) | – |
+
+`GET /v1/templates` describes every field (type, required, max length, choices, default).
+
+```bash
+curl -X POST http://localhost:8000/v1/templates/todo/print \
+  -H "X-API-Key: change-me" -H "Content-Type: application/json" \
+  -d '{"values": {"taches": "Bread\nMilk\nCall the plumber", "priorite": "haute"}}'
+```
+
+Body of `render` and `print`: `values`, plus optional `printer`, `cut` (default `true`), `now`
+(local date-time printed on the ticket; server time, see `TZ`, if omitted) and `seed` (picks the
+random quote). Values are validated: unknown field, wrong type, value not in the choices, bad
+date (`YYYY-MM-DD`) or time (`HH:MM`) → `422` naming the field. `render` returns the job that
+`/v1/print` accepts as is, to review or edit it first; with `"partial": true` required fields
+may be empty (live preview).
+
+In n8n, an **HTTP Request** node (POST, JSON body as above, header `X-API-Key`) is enough.
 
 ---
 
@@ -165,8 +206,8 @@ Every error has the form `{"error": "<code>", "message": "...", "details": [...]
 
 `UI_ENABLED=true` serves a static page on `/ui/` (no build, no external resource, strict CSP):
 
-- **Templates**: memo, to-do list, shopping list, XXL sticky note, note in a frame, reminder
-  with a QR link, guest Wi-Fi QR code, Kanban card with a barcode, daily journal, quote of the day.
+- **Templates**: the [memo templates](#memo-templates) of the API, with a form and a live
+  preview rendered by the server.
 - **Editor**: text with styles, separators, spaces, QR codes, barcodes, images, cuts; reorder,
   duplicate, delete. API validation errors are shown on the faulty block.
 - **Preview** at the paper width of the selected printer (80/58 mm), with dithered images and a
